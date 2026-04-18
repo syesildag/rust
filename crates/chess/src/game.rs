@@ -1,0 +1,142 @@
+use crate::board::Board;
+use crate::movegen::generate_legal_moves;
+use crate::piece::{Color, PieceKind};
+
+/// Reason a game ended in a draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawReason {
+    FiftyMoveRule,
+    InsufficientMaterial,
+}
+
+/// The current status of the game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameStatus {
+    Ongoing,
+    Checkmate,
+    Stalemate,
+    Draw(DrawReason),
+}
+
+/// Determines the current game status for the side to move.
+#[must_use]
+pub fn game_status(board: &Board) -> GameStatus {
+    if board.halfmove_clock >= 100 {
+        return GameStatus::Draw(DrawReason::FiftyMoveRule);
+    }
+    if has_insufficient_material(board) {
+        return GameStatus::Draw(DrawReason::InsufficientMaterial);
+    }
+    let legal = generate_legal_moves(board);
+    if legal.is_empty() {
+        if board.is_in_check(board.side_to_move) {
+            GameStatus::Checkmate
+        } else {
+            GameStatus::Stalemate
+        }
+    } else {
+        GameStatus::Ongoing
+    }
+}
+
+/// Returns `true` when neither side has sufficient mating material.
+///
+/// Recognized draw patterns:
+/// - Kings only
+/// - King + bishop vs king
+/// - King + knight vs king
+fn has_insufficient_material(board: &Board) -> bool {
+    let white_count = board.white_occupied().count_ones();
+    let black_count = board.black_occupied().count_ones();
+
+    // More than 3 pieces total → sufficient material may exist
+    if white_count + black_count > 3 {
+        return false;
+    }
+
+    // Both kings only
+    if white_count == 1 && black_count == 1 {
+        return true;
+    }
+
+    // One side has exactly one minor piece (bishop or knight)
+    for color in [Color::White, Color::Black] {
+        let ci = color as usize;
+        let own_count = if color == Color::White {
+            white_count
+        } else {
+            black_count
+        };
+        let opp_count = if color == Color::White {
+            black_count
+        } else {
+            white_count
+        };
+        if own_count == 2 && opp_count == 1 {
+            let bishops = board.pieces[ci][PieceKind::Bishop.index()].count_ones();
+            let knights = board.pieces[ci][PieceKind::Knight.index()].count_ones();
+            if bishops == 1 || knights == 1 {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fen::from_fen;
+
+    fn board(fen: &str) -> Board {
+        from_fen(fen).unwrap()
+    }
+
+    #[test]
+    fn ongoing_at_start() {
+        assert_eq!(
+            game_status(&Board::starting_position()),
+            GameStatus::Ongoing
+        );
+    }
+
+    #[test]
+    fn scholars_mate_is_checkmate() {
+        // Position after Scholar's mate — white is checkmated
+        let b = board("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(game_status(&b), GameStatus::Checkmate);
+    }
+
+    #[test]
+    fn stalemate_position() {
+        let b = board("k7/8/1Q6/8/8/8/8/7K b - - 0 1");
+        assert_eq!(game_status(&b), GameStatus::Stalemate);
+    }
+
+    #[test]
+    fn fifty_move_draw() {
+        // Modify starting position halfmove clock to 100
+        let mut b = Board::starting_position();
+        b.halfmove_clock = 100;
+        assert_eq!(game_status(&b), GameStatus::Draw(DrawReason::FiftyMoveRule));
+    }
+
+    #[test]
+    fn insufficient_material_kings_only() {
+        let b = board("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+        assert_eq!(
+            game_status(&b),
+            GameStatus::Draw(DrawReason::InsufficientMaterial)
+        );
+    }
+
+    #[test]
+    fn insufficient_material_king_knight() {
+        let b = board("4k3/8/8/8/8/8/8/4KN2 w - - 0 1");
+        assert_eq!(
+            game_status(&b),
+            GameStatus::Draw(DrawReason::InsufficientMaterial)
+        );
+    }
+}
