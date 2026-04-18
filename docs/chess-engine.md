@@ -179,6 +179,39 @@ The round-trip `from_fen(to_fen(board))` always produces an identical board.
 
 ---
 
+## Board Display
+
+`Board` implements `fmt::Display`, so it can be printed directly with `println!` or
+`format!` — no helper function needed.
+
+```rust
+println!("{}", Board::starting_position());
+// or equivalently:
+println!("{board}");
+```
+
+Output format (rank 8 at top, rank 1 at bottom):
+
+```
+  a b c d e f g h
+8 r n b q k b n r 8
+7 p p p p p p p p 7
+6 · · · · · · · · 6
+5 · · · · · · · · 5
+4 · · · · · · · · 4
+3 · · · · · · · · 3
+2 P P P P P P P P 2
+1 R N B Q K B N R 1
+  a b c d e f g h
+```
+
+Conventions:
+- **Uppercase** letters — white pieces (R N B Q K P)
+- **Lowercase** letters — black pieces (r n b q k p)
+- `·` — empty square
+
+---
+
 ## Game Status
 
 ```rust
@@ -232,6 +265,7 @@ chess::fen::from_fen(s: &str) -> Result<Board, FenError>
 board.piece_at(sq: Square) -> Option<Piece>
 board.is_in_check(color: Color) -> bool
 board.to_fen() -> String
+fmt::Display for Board  // println!("{board}") prints ASCII grid
 
 // Move generation
 chess::movegen::generate_legal_moves(board: &Board) -> Vec<Move>
