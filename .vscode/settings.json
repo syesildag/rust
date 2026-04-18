@@ -1,0 +1,8 @@
+{
+  "terminal.integrated.env.osx": {
+    "PATH": "/Users/serkan/.cargo/bin:${env:PATH}"
+  },
+  "rust-analyzer.cargo.extraEnv": {
+    "PATH": "/Users/serkan/.cargo/bin:${env:PATH}"
+  }
+}
