@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo build cli",
+      "type": "shell",
+      "command": "/Users/serkan/.cargo/bin/cargo",
+      "args": ["build", "--bin=cli", "--package=cli"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": "$codelldb-rustc"
+    }
+  ]
+}

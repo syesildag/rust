@@ -5,15 +5,10 @@
       "type": "lldb",
       "request": "launch",
       "name": "Debug cli (add 1 2)",
-      "cargo": {
-        "args": ["build", "--bin=cli", "--package=cli"],
-        "filter": { "name": "cli", "kind": "bin" }
-      },
+      "program": "${workspaceFolder}/target/debug/cli",
       "args": ["1", "2"],
       "cwd": "${workspaceFolder}",
-      "env": {
-        "PATH": "/Users/serkan/.cargo/bin:${env:PATH}"
-      }
+      "preLaunchTask": "cargo build cli"
     }
   ]
 }
