@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::attack;
 use crate::bitboard::{clear_bit, lsb_square, set_bit};
 use crate::fen;
@@ -206,6 +208,45 @@ impl Board {
         PieceKind::ALL
             .into_iter()
             .find(|&kind| self.pieces[self.side_to_move as usize][kind.index()] & bit != 0)
+    }
+}
+
+/// Displays the board as an ASCII grid (rank 8 at top, rank 1 at bottom).
+///
+/// White pieces are uppercase, black pieces are lowercase.
+/// Empty squares are shown as `·`.
+///
+/// ```
+/// use chess::board::Board;
+/// println!("{}", Board::starting_position());
+/// ```
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "  a b c d e f g h")?;
+        for rank in (0..8).rev() {
+            write!(f, "{} ", rank + 1)?;
+            for file in 0..8u8 {
+                let sq = Square::from_file_rank(file, rank);
+                let ch = match self.piece_at(sq) {
+                    Some(p) => {
+                        let c = p.kind.fen_char();
+                        if p.color == Color::White {
+                            c
+                        } else {
+                            c.to_ascii_lowercase()
+                        }
+                    }
+                    None => '·',
+                };
+                if file < 7 {
+                    write!(f, "{ch} ")?;
+                } else {
+                    write!(f, "{ch}")?;
+                }
+            }
+            writeln!(f, " {}", rank + 1)?;
+        }
+        write!(f, "  a b c d e f g h")
     }
 }
 

@@ -33,6 +33,8 @@ fn main() {
     let moves = generate_legal_moves(&board);
     let status = game_status(&board);
 
+    println!("{board}");
+    println!();
     println!("FEN: {}", board.to_fen());
     println!("Side to move: {:?}", board.side_to_move);
     println!(
