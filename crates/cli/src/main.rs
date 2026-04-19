@@ -1,4 +1,5 @@
 use chess::board::Board;
+use tensor::global_gpu;
 use chess::fen::from_fen;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
@@ -12,6 +13,9 @@ fn main() {
         .with_target(true)
         .with_span_events(FmtSpan::CLOSE)
         .init();
+
+    // Compile all Metal/Vulkan pipelines once before any command runs.
+    let _ = global_gpu();
 
     let args: Vec<String> = std::env::args().collect();
 

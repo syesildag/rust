@@ -22,5 +22,5 @@ pub mod ops;
 pub mod optim;
 mod tensor_impl;
 
-pub use gpu::GpuContext;
+pub use gpu::{global_gpu, GpuContext};
 pub use tensor_impl::{GradFn, Tensor};

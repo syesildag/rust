@@ -129,6 +129,7 @@ dependencies = [
  "chess",
  "core",
  "engine",
+ "tensor",
  "tracing",
  "tracing-subscriber",
 ]

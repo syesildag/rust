@@ -86,6 +86,17 @@ pub fn encode_batch(board: &Board) -> Tensor {
     encode(board).reshape(&[1, 17, 8, 8])
 }
 
+/// Encodes a slice of board positions into a single `[B, 17, 8, 8]` batch tensor.
+#[must_use]
+pub fn encode_boards(boards: &[Board]) -> Tensor {
+    let b = boards.len();
+    let mut data = Vec::with_capacity(b * 17 * 64);
+    for board in boards {
+        data.extend_from_slice(&encode(board).data());
+    }
+    Tensor::from_vec(data, &[b, 17, 8, 8])
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {

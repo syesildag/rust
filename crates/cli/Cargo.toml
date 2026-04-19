@@ -7,6 +7,7 @@ edition.workspace = true
 core   = { path = "../core" }
 chess  = { path = "../chess" }
 engine = { path = "../engine" }
+tensor = { path = "../tensor" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

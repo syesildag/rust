@@ -72,21 +72,13 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         for batch in dataset.batches(cfg.batch_size) {
             adam.zero_grad();
 
-            // Build summed MSE loss over the batch as one computation graph.
-            let batch_loss = batch
-                .iter()
-                .map(|(board, label)| {
-                    let pred = model.forward(board);
-                    let target = Tensor::from_vec(vec![*label], &[1, 1]);
-                    let diff = ops::sub(&pred, &target);
-                    let d_val = diff.data()[0];
-                    ops::mul_scalar(&diff, d_val) // diff * diff ≈ diff²
-                })
-                .reduce(|a, b| ops::add(&a, &b))
-                .expect("batch is non-empty");
+            let (boards, labels): (Vec<_>, Vec<f32>) =
+                batch.iter().map(|(b, l)| (b.clone(), *l)).unzip();
+            let b = boards.len();
 
-            let scale = 1.0 / batch.len() as f32;
-            let loss = ops::mul_scalar(&batch_loss, scale);
+            let preds = model.forward_batch(&boards);
+            let targets = Tensor::from_vec(labels, &[b, 1]);
+            let loss = ops::mse_loss_tensor(&preds, &targets);
 
             loss.backward();
             adam.step();

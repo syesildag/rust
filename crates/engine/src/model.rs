@@ -28,7 +28,7 @@
 //! (+1.0 = White wins, -1.0 = Black wins, 0.0 = draw). Bounded output also
 //! stabilises MSE loss by preventing divergence during early training.
 
-use crate::encode::encode_batch;
+use crate::encode::{encode_batch, encode_boards};
 use crate::nn::ResNetBackbone;
 use chess::board::Board;
 use std::fs::File;
@@ -105,6 +105,44 @@ impl HybridValueNet {
         // 7. Extract CLS (row 0) → [256], then project to scalar
         let cls = ops::select_row(&x, 0);
         ops::tanh(&self.head.forward(&cls))
+    }
+
+    /// Evaluates a batch of board positions.
+    ///
+    /// Returns `[B, 1]` with values ∈ (-1, +1).
+    /// The CNN backbone processes all boards simultaneously; the transformer is applied
+    /// per item so that the existing single-sequence attention code requires no change.
+    #[must_use]
+    pub fn forward_batch(&self, boards: &[Board]) -> Tensor {
+        let _span = trace_span!("HybridValueNet::forward_batch").entered();
+        let b = boards.len();
+
+        // 1. Encode all boards → [B, 17, 8, 8]
+        let x = encode_boards(boards);
+
+        // 2. CNN backbone → [B, 256, 8, 8]
+        let x = self.backbone.forward(&x);
+
+        // 3. Per-item transformer; collect CLS output for each item.
+        let mut cls_outputs: Vec<Tensor> = Vec::with_capacity(b);
+        for i in 0..b {
+            // [256, 8, 8]
+            let xi = ops::slice_batch(&x, i);
+            // [64, 256]
+            let xi = xi.reshape(&[64, D_MODEL]);
+            // [65, 256]
+            let xi = ops::cat(&[&self.cls_token, &xi]);
+            let xi = ops::add(&xi, &self.pos_embed);
+            let xi = self.encoder.forward(&xi);
+            // [1, 256]
+            let cls = ops::select_row(&xi, 0);
+            cls_outputs.push(cls);
+        }
+
+        // 4. Stack → [B, 256], project → [B, 1], tanh → [B, 1]
+        let refs: Vec<&Tensor> = cls_outputs.iter().collect();
+        let x = ops::cat(&refs);
+        ops::tanh(&self.head.forward(&x))
     }
 
     /// Collects all learnable parameters (for the optimizer).

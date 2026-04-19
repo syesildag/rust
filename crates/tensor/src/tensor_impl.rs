@@ -252,7 +252,11 @@ impl Tensor {
                 out[j * m + i] = src[i * n + j];
             }
         }
-        Self::from_vec(out, &[n, m])
+        if self.requires_grad() {
+            Self::from_op(out, &[n, m], Arc::new(TBackward { input: self.clone(), m, n }))
+        } else {
+            Self::from_vec(out, &[n, m])
+        }
     }
 
     /// Returns a view with a different shape (same total elements).
@@ -268,7 +272,11 @@ impl Tensor {
             "reshape: {old} → {new_n} element mismatch",
             old = self.numel()
         );
-        Self::from_vec(self.data(), shape)
+        if self.requires_grad() {
+            Self::from_op(self.data(), shape, Arc::new(ReshapeBackward { input: self.clone() }))
+        } else {
+            Self::from_vec(self.data(), shape)
+        }
     }
 
     /// Extracts row `i` from a 2-D tensor as a 1-D tensor `[N]`.
@@ -335,6 +343,40 @@ impl Tensor {
                 requires_grad: true,
             }),
         }
+    }
+}
+
+// ── Grad-fn nodes for shape ops ──────────────────────────────────────────────
+
+struct ReshapeBackward {
+    input: Tensor,
+}
+
+impl GradFn for ReshapeBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn backward(&self, grad_output: &[f32]) {
+        self.input.accumulate_grad(grad_output);
+    }
+}
+
+struct TBackward {
+    input: Tensor,
+    m: usize,
+    n: usize,
+}
+
+impl GradFn for TBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn backward(&self, grad_output: &[f32]) {
+        // grad_output is [N, M]; transpose back to [M, N]
+        let (m, n) = (self.m, self.n);
+        let mut g = vec![0.0f32; m * n];
+        for i in 0..n {
+            for j in 0..m {
+                g[j * n + i] = grad_output[i * m + j];
+            }
+        }
+        self.input.accumulate_grad(&g);
     }
 }
 

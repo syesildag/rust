@@ -17,12 +17,12 @@
 
 use std::sync::Arc;
 
-use crate::tensor_impl::{GradFn, Tensor};
+use crate::{gpu, tensor_impl::{GradFn, Tensor}};
 
 // ── Internal CPU math helpers ──────────────────────────────────────��──────────
 
 /// C = A @ B where A is [m×k] and B is [k×n].
-fn matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
+fn cpu_matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     let mut c = vec![0.0f32; m * n];
     for i in 0..m {
         for j in 0..n {
@@ -34,6 +34,16 @@ fn matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
         }
     }
     c
+}
+
+/// Dispatching wrapper: uses GPU when the FLOP count justifies transfer overhead.
+fn matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
+    if m * k * n > 8_192 {
+        if let Some(g) = gpu::global_gpu() {
+            return g.matmul(a, b, m, k, n);
+        }
+    }
+    cpu_matmul_2d(a, b, m, k, n)
 }
 
 /// Transpose a 2-D matrix [m×n] → [n×m].
@@ -90,12 +100,14 @@ pub fn add(a: &Tensor, b: &Tensor) -> Tensor {
         a.shape(),
         b.shape()
     );
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data().iter())
-        .map(|(x, y)| x + y)
-        .collect();
+    let ad = a.data();
+    let bd = b.data();
+    let data: Vec<f32> = if ad.len() > 4_096 {
+        if let Some(g) = gpu::global_gpu() { g.elementwise(&ad, &bd, 2) }
+        else { ad.iter().zip(bd.iter()).map(|(x, y)| x + y).collect() }
+    } else {
+        ad.iter().zip(bd.iter()).map(|(x, y)| x + y).collect()
+    };
     let shape = a.shape().to_vec();
     if a.requires_grad() || b.requires_grad() {
         Tensor::from_op(
@@ -138,12 +150,14 @@ impl GradFn for SubBackward {
 #[must_use]
 pub fn sub(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(a.shape(), b.shape());
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data().iter())
-        .map(|(x, y)| x - y)
-        .collect();
+    let ad = a.data();
+    let bd = b.data();
+    let data: Vec<f32> = if ad.len() > 4_096 {
+        if let Some(g) = gpu::global_gpu() { g.elementwise(&ad, &bd, 3) }
+        else { ad.iter().zip(bd.iter()).map(|(x, y)| x - y).collect() }
+    } else {
+        ad.iter().zip(bd.iter()).map(|(x, y)| x - y).collect()
+    };
     let shape = a.shape().to_vec();
     if a.requires_grad() || b.requires_grad() {
         Tensor::from_op(
@@ -379,7 +393,12 @@ impl GradFn for ReluBackward {
 pub fn relu(x: &Tensor) -> Tensor {
     let src = x.data();
     let mask: Vec<bool> = src.iter().map(|&v| v > 0.0).collect();
-    let data: Vec<f32> = src.iter().map(|&v| v.max(0.0)).collect();
+    let data: Vec<f32> = if src.len() > 4_096 {
+        if let Some(g) = gpu::global_gpu() { g.elementwise(&src, &[], 0) }
+        else { src.iter().map(|&v| v.max(0.0)).collect() }
+    } else {
+        src.iter().map(|&v| v.max(0.0)).collect()
+    };
     let shape = x.shape().to_vec();
     if x.requires_grad() {
         Tensor::from_op(
@@ -443,7 +462,12 @@ impl GradFn for GeluBackward {
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     let src = x.data();
-    let data: Vec<f32> = src.iter().map(|&v| gelu_fwd(v)).collect();
+    let data: Vec<f32> = if src.len() > 4_096 {
+        if let Some(g) = gpu::global_gpu() { g.elementwise(&src, &[], 1) }
+        else { src.iter().map(|&v| gelu_fwd(v)).collect() }
+    } else {
+        src.iter().map(|&v| gelu_fwd(v)).collect()
+    };
     let shape = x.shape().to_vec();
     if x.requires_grad() {
         Tensor::from_op(
@@ -562,7 +586,12 @@ pub fn softmax(x: &Tensor) -> Tensor {
     assert_eq!(s_x.len(), 2, "softmax: expected 2-D tensor, got {s_x:?}");
     let (s, d) = (s_x[0], s_x[1]);
     let src = x.data();
-    let data = softmax_rows(&src, s, d);
+    let mut data = softmax_rows(&src, s, d);
+    if s * d > 2_048 {
+        if let Some(g) = gpu::global_gpu() {
+            data = g.softmax(&src, s, d);
+        }
+    }
     if x.requires_grad() {
         Tensor::from_op(
             data.clone(),
@@ -677,6 +706,12 @@ pub fn layer_norm(x: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) -> Tensor
         saved_inv_std[i] = inv_std;
         for j in 0..d {
             data[i * d + j] = gamma_data[j] * (row[j] - mean) * inv_std + beta_data[j];
+        }
+    }
+    // Optionally replace the CPU-computed output with GPU output.
+    if s * d > 2_048 {
+        if let Some(g) = gpu::global_gpu() {
+            data = g.layer_norm(&src, &gamma_data, &beta_data, eps, s, d);
         }
     }
     let needs_grad = x.requires_grad() || gamma.requires_grad() || beta.requires_grad();
@@ -1007,19 +1042,12 @@ impl GradFn for Conv2dBackward {
         // weight: [C_out, C_in*kH*kW]
         let w_data = self.weight.data();
         if self.weight.requires_grad() {
-            // d_weight = sum_N( cols_N.T @ g_mat_N )  →  [C_in*kH*kW, C_out]
-            let mut dw = vec![0.0f32; col_cols * c_out];
-            for ni in 0..n {
-                let cols_n =
-                    &self.saved_cols[ni * col_rows * col_cols..(ni + 1) * col_rows * col_cols];
-                let gmat_n = &g_mat[ni * col_rows * c_out..(ni + 1) * col_rows * c_out];
-                let ct = transpose_2d(cols_n, col_rows, col_cols);
-                let part = matmul_2d(&ct, gmat_n, col_cols, col_rows, c_out);
-                for (dw_i, p) in dw.iter_mut().zip(part.iter()) {
-                    *dw_i += p;
-                }
-            }
-            // d_weight has shape [C_in*kH*kW, C_out]; transpose to [C_out, C_in*kH*kW]
+            // d_weight = cols.T @ g_mat  →  [col_cols, N*HW].T @ [N*HW, C_out] …
+            // cols: [N*HW, col_cols],  g_mat: [N*HW, C_out]
+            // cols.T: [col_cols, N*HW]
+            let cols_t = transpose_2d(&self.saved_cols, n * col_rows, col_cols);
+            let dw = matmul_2d(&cols_t, &g_mat, col_cols, n * col_rows, c_out);
+            // dw: [col_cols, c_out] → transpose to [c_out, col_cols]
             let dw_t = transpose_2d(&dw, col_cols, c_out);
             self.weight.accumulate_grad(&dw_t);
         }
@@ -1039,14 +1067,8 @@ impl GradFn for Conv2dBackward {
             self.bias.accumulate_grad(&db);
         }
         if self.input.requires_grad() {
-            // d_cols = g_mat @ weight  ([N, HW, C_out] @ [C_out, col_cols] = [N, HW, col_cols])
-            let mut d_cols = vec![0.0f32; n * col_rows * col_cols];
-            for ni in 0..n {
-                let gmat_n = &g_mat[ni * col_rows * c_out..(ni + 1) * col_rows * c_out];
-                let dc = matmul_2d(gmat_n, &w_data, col_rows, c_out, col_cols);
-                d_cols[ni * col_rows * col_cols..(ni + 1) * col_rows * col_cols]
-                    .copy_from_slice(&dc);
-            }
+            // d_cols = g_mat @ weight  ([N*HW, C_out] @ [C_out, col_cols] = [N*HW, col_cols])
+            let d_cols = matmul_2d(&g_mat, &w_data, n * col_rows, c_out, col_cols);
             let mut d_input = vec![0.0f32; n * self.c_in * self.h * self.w];
             col2im_add(
                 &d_cols,
@@ -1089,22 +1111,21 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
     let weight_data = weight.data();
     let bias_data = bias.data();
     let (cols, h_out, w_out) = im2col(&input_data, n, c_in, h, w, kh, kw, padding);
-    // weight_mat: [C_out, C_in*kH*kW]
     let col_cols = c_in * kh * kw;
     let col_rows = h_out * w_out;
-    // output: [N, C_out, H_out, W_out]
+    // Single matmul over the full batch:
+    // [N*HW, col_cols] @ [col_cols, C_out] = [N*HW, C_out]
+    let wt = transpose_2d(&weight_data, c_out, col_cols);
+    let out_mat = matmul_2d(&cols, &wt, n * col_rows, col_cols, c_out);
+    // Reorder [N, H_out*W_out, C_out] → [N, C_out, H_out, W_out] and add bias.
     let mut data = vec![0.0f32; n * c_out * h_out * w_out];
     for ni in 0..n {
-        let cols_n = &cols[ni * col_rows * col_cols..(ni + 1) * col_rows * col_cols];
-        // [H_out*W_out, col_cols] @ [col_cols, C_out] = [H_out*W_out, C_out]
-        let wt = transpose_2d(&weight_data, c_out, col_cols);
-        let out_mat = matmul_2d(cols_n, &wt, col_rows, col_cols, c_out);
-        // Reorder [H_out*W_out, C_out] → [C_out, H_out, W_out]
         for co in 0..c_out {
             for hi in 0..h_out {
                 for wi in 0..w_out {
                     data[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi] =
-                        out_mat[(hi * w_out + wi) * c_out + co] + bias_data[co];
+                        out_mat[ni * col_rows * c_out + (hi * w_out + wi) * c_out + co]
+                            + bias_data[co];
                 }
             }
         }
@@ -1356,6 +1377,181 @@ pub fn sum(x: &Tensor) -> Tensor {
         Tensor::from_op(vec![s], &[1], Arc::new(SumBackward { input: x.clone() }))
     } else {
         Tensor::from_vec(vec![s], &[1])
+    }
+}
+
+// ── matmul_batched ────────────────────────────────────────────────────────────
+
+struct MatMulBatchedBackward {
+    a: Tensor,
+    b: Tensor,
+    batch: usize,
+    m: usize,
+    k: usize,
+    n: usize,
+}
+impl GradFn for MatMulBatchedBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.a.clone(), self.b.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        let (batch, m, k, n) = (self.batch, self.m, self.k, self.n);
+        let a_data = self.a.data();
+        let b_data = self.b.data();
+        let mut da = vec![0.0f32; batch * m * k];
+        let mut db = vec![0.0f32; batch * k * n];
+        for bi in 0..batch {
+            let g_b = &g[bi * m * n..(bi + 1) * m * n];
+            if self.a.requires_grad() {
+                let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
+                let bt = transpose_2d(b_b, k, n);
+                let d = cpu_matmul_2d(g_b, &bt, m, n, k);
+                da[bi * m * k..(bi + 1) * m * k].copy_from_slice(&d);
+            }
+            if self.b.requires_grad() {
+                let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
+                let at = transpose_2d(a_b, m, k);
+                let d = cpu_matmul_2d(&at, g_b, k, m, n);
+                db[bi * k * n..(bi + 1) * k * n].copy_from_slice(&d);
+            }
+        }
+        if self.a.requires_grad() { self.a.accumulate_grad(&da); }
+        if self.b.requires_grad() { self.b.accumulate_grad(&db); }
+    }
+}
+
+/// Batched matrix multiply: `[B, M, K] × [B, K, N] → [B, M, N]`.
+///
+/// # Panics
+/// Panics if `a` or `b` are not 3-D, or their dimensions are inconsistent.
+#[must_use]
+pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
+    let sa = a.shape();
+    let sb = b.shape();
+    assert_eq!(sa.len(), 3, "matmul_batched: a must be 3-D, got {sa:?}");
+    assert_eq!(sb.len(), 3, "matmul_batched: b must be 3-D, got {sb:?}");
+    assert_eq!(sa[0], sb[0], "matmul_batched: batch mismatch {sa:?} vs {sb:?}");
+    assert_eq!(sa[2], sb[1], "matmul_batched: inner dim mismatch {sa:?} vs {sb:?}");
+    let (batch, m, k, n) = (sa[0], sa[1], sa[2], sb[2]);
+    let a_data = a.data();
+    let b_data = b.data();
+    let data = if let Some(g) = gpu::global_gpu() {
+        g.matmul_batched(&a_data, &b_data, batch, m, k, n)
+    } else {
+        let mut c = vec![0.0f32; batch * m * n];
+        for bi in 0..batch {
+            let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
+            let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
+            let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
+            c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
+        }
+        c
+    };
+    if a.requires_grad() || b.requires_grad() {
+        Tensor::from_op(
+            data,
+            &[batch, m, n],
+            Arc::new(MatMulBatchedBackward { a: a.clone(), b: b.clone(), batch, m, k, n }),
+        )
+    } else {
+        Tensor::from_vec(data, &[batch, m, n])
+    }
+}
+
+// ── slice_batch ───────────────────────────────────────────────────────────────
+
+struct SliceBatchBackward {
+    input: Tensor,
+    idx: usize,
+    item_size: usize,
+    batch: usize,
+}
+impl GradFn for SliceBatchBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let mut d = vec![0.0f32; self.batch * self.item_size];
+            d[self.idx * self.item_size..(self.idx + 1) * self.item_size].copy_from_slice(g);
+            self.input.accumulate_grad(&d);
+        }
+    }
+}
+
+/// Extracts batch item `idx` from a tensor with shape `[B, ...]`, returning `[...]`.
+///
+/// Preserves gradient flow back to the original batch tensor.
+///
+/// # Panics
+/// Panics if the tensor has fewer than 1 dimension or `idx` is out of bounds.
+#[must_use]
+pub fn slice_batch(x: &Tensor, idx: usize) -> Tensor {
+    let s = x.shape();
+    assert!(!s.is_empty(), "slice_batch: tensor must have at least 1 dimension");
+    let batch = s[0];
+    assert!(idx < batch, "slice_batch: idx {idx} out of bounds for batch {batch}");
+    let item_shape: Vec<usize> = s[1..].to_vec();
+    let item_size: usize = item_shape.iter().product();
+    let data = x.data()[idx * item_size..(idx + 1) * item_size].to_vec();
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &item_shape,
+            Arc::new(SliceBatchBackward { input: x.clone(), idx, item_size, batch }),
+        )
+    } else {
+        Tensor::from_vec(data, &item_shape)
+    }
+}
+
+// ── mse_loss_tensor ───────────────────────────────────────────────────────────
+
+struct MseLossTensorBackward {
+    pred: Tensor,
+    target_data: Vec<f32>,
+    n: usize,
+}
+impl GradFn for MseLossTensorBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.pred.clone()] }
+    fn backward(&self, g: &[f32]) {
+        if self.pred.requires_grad() {
+            let scale = 2.0 * g[0] / self.n as f32;
+            let pred_data = self.pred.data();
+            let d: Vec<f32> = pred_data
+                .iter()
+                .zip(self.target_data.iter())
+                .map(|(&p, &t)| scale * (p - t))
+                .collect();
+            self.pred.accumulate_grad(&d);
+        }
+    }
+}
+
+/// Mean-squared error between two tensors of identical shape.
+///
+/// Returns a scalar `[1]` tensor: `mean((pred - target)²)`.
+///
+/// # Panics
+/// Panics if shapes differ.
+#[must_use]
+pub fn mse_loss_tensor(pred: &Tensor, target: &Tensor) -> Tensor {
+    assert_eq!(pred.shape(), target.shape(), "mse_loss_tensor: shape mismatch");
+    let pred_data = pred.data();
+    let target_data = target.data();
+    let n = pred_data.len();
+    let loss: f32 = pred_data
+        .iter()
+        .zip(target_data.iter())
+        .map(|(&p, &t)| (p - t).powi(2))
+        .sum::<f32>()
+        / n as f32;
+    if pred.requires_grad() {
+        Tensor::from_op(
+            vec![loss],
+            &[1],
+            Arc::new(MseLossTensorBackward { pred: pred.clone(), target_data, n }),
+        )
+    } else {
+        Tensor::from_vec(vec![loss], &[1])
     }
 }
 
