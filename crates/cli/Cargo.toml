@@ -4,8 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-core = { path = "../core" }
-chess = { path = "../chess" }
+core   = { path = "../core" }
+chess  = { path = "../chess" }
+engine = { path = "../engine" }
 
 [lints]
 workspace = true

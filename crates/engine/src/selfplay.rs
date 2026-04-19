@@ -1,0 +1,89 @@
+//! Greedy self-play: model plays against itself to generate training data.
+//!
+//! No MCTS — each ply simply picks the move whose resulting position has the
+//! highest value from the current player's perspective.  The terminal game
+//! outcome labels every position in the game.
+
+use crate::dataset::ChessDataset;
+use crate::model::HybridValueNet;
+use chess::board::Board;
+use chess::game::{game_status, GameStatus};
+use chess::movegen::generate_legal_moves;
+use chess::piece::Color;
+
+/// Plays `num_games` greedy games and collects all (position, outcome) pairs.
+#[must_use]
+pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
+    let mut dataset = ChessDataset::new();
+    for game_idx in 0..num_games {
+        if (game_idx + 1) % 10 == 0 {
+            println!("Self-play: {}/{} games", game_idx + 1, num_games);
+        }
+        let samples = play_game(model);
+        dataset.extend(samples);
+    }
+    dataset
+}
+
+/// Plays a single game and returns `(board_before_move, outcome)` for every ply.
+fn play_game(model: &HybridValueNet) -> Vec<(Board, f32)> {
+    let mut board = Board::starting_position();
+    let mut history: Vec<Board> = Vec::new();
+    let max_ply = 400; // prevent infinite games
+
+    for _ in 0..max_ply {
+        match game_status(&board) {
+            GameStatus::Ongoing => {}
+            _ => break,
+        }
+        history.push(board.clone());
+
+        let legal = generate_legal_moves(&board);
+        if legal.is_empty() {
+            break;
+        }
+
+        // Pick the move maximising value from the side-to-move's perspective.
+        let best_move = legal.iter().copied().max_by(|&a, &b| {
+            let va = eval_move(model, &board, a);
+            let vb = eval_move(model, &board, b);
+            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Some(mv) = best_move {
+            board = board.make_move(mv);
+        } else {
+            break;
+        }
+    }
+
+    let outcome = terminal_outcome(&board);
+
+    history.into_iter().map(|b| (b, outcome)).collect()
+}
+
+/// Evaluates a candidate move by running the model on the resulting position,
+/// negating for Black (so higher is always better for the side to move).
+fn eval_move(model: &HybridValueNet, board: &Board, mv: chess::moves::Move) -> f32 {
+    let after = board.make_move(mv);
+    let raw = model.forward(&after).data()[0];
+    // White maximises positive values; Black maximises negative (flips sign).
+    match board.side_to_move {
+        Color::White => raw,
+        Color::Black => -raw,
+    }
+}
+
+/// Returns the game outcome from White's perspective after the position is terminal.
+fn terminal_outcome(board: &Board) -> f32 {
+    match game_status(board) {
+        GameStatus::Checkmate => {
+            // The side to move was checkmated, so the *other* side won.
+            match board.side_to_move {
+                Color::White => -1.0, // Black gave checkmate
+                Color::Black => 1.0,  // White gave checkmate
+            }
+        }
+        _ => 0.0, // stalemate, draw, or max-ply reached
+    }
+}

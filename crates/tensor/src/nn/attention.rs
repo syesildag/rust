@@ -1,0 +1,90 @@
+//! Multi-head self-attention.
+//!
+//! Runs `h` attention heads in parallel (each of dimension `d_k = d_model / h`),
+//! concatenates them, and applies a final output projection.
+
+#![allow(clippy::cast_precision_loss)]
+
+use crate::nn::Linear;
+use crate::ops;
+use crate::Tensor;
+
+/// Multi-head self-attention.
+///
+/// `d_model` must be divisible by `num_heads`.
+pub struct MultiHeadAttention {
+    wq: Vec<Linear>,
+    wk: Vec<Linear>,
+    wv: Vec<Linear>,
+    wo: Linear,
+    pub num_heads: usize,
+    pub d_k: usize,
+}
+
+impl MultiHeadAttention {
+    /// Creates a new `MultiHeadAttention`.
+    ///
+    /// # Panics
+    /// Panics if `d_model` is not divisible by `num_heads`.
+    #[must_use]
+    pub fn new(d_model: usize, num_heads: usize) -> Self {
+        assert_eq!(
+            d_model % num_heads,
+            0,
+            "d_model must be divisible by num_heads"
+        );
+        let d_k = d_model / num_heads;
+        let wq = (0..num_heads)
+            .map(|_| Linear::new(d_model, d_k, false))
+            .collect();
+        let wk = (0..num_heads)
+            .map(|_| Linear::new(d_model, d_k, false))
+            .collect();
+        let wv = (0..num_heads)
+            .map(|_| Linear::new(d_model, d_k, false))
+            .collect();
+        let wo = Linear::new(d_model, d_model, false);
+        Self {
+            wq,
+            wk,
+            wv,
+            wo,
+            num_heads,
+            d_k,
+        }
+    }
+
+    /// Forward: `[S, d_model] → [S, d_model]`.
+    #[must_use]
+    pub fn forward(&self, x: &Tensor) -> Tensor {
+        let scale = 1.0 / (self.d_k as f32).sqrt();
+        // Compute each head: [S, d_k]
+        let head_tensors: Vec<Tensor> = (0..self.num_heads)
+            .map(|h| {
+                let q = self.wq[h].forward(x);
+                let k = self.wk[h].forward(x);
+                let v = self.wv[h].forward(x);
+                let scores = ops::mul_scalar(&ops::matmul(&q, &k.t()), scale);
+                let attn = ops::softmax(&scores);
+                ops::matmul(&attn, &v) // [S, d_k]
+            })
+            .collect();
+        // Concatenate all heads along dim-1 → [S, d_model], then project.
+        let refs: Vec<&Tensor> = head_tensors.iter().collect();
+        let concat = ops::cat_cols(&refs); // [S, d_model]
+        self.wo.forward(&concat)
+    }
+
+    /// Returns all learnable parameters.
+    #[must_use]
+    pub fn parameters(&self) -> Vec<Tensor> {
+        let mut p = Vec::new();
+        for h in 0..self.num_heads {
+            p.extend(self.wq[h].parameters());
+            p.extend(self.wk[h].parameters());
+            p.extend(self.wv[h].parameters());
+        }
+        p.extend(self.wo.parameters());
+        p
+    }
+}
