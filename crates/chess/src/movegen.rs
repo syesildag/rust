@@ -1,3 +1,23 @@
+//! Legal move generation via pseudo-legal filtering.
+//!
+//! ## Two-pass approach
+//!
+//! 1. **Pseudo-legal generation** — produces all moves that follow each piece's
+//!    movement rules, without checking whether the king is left in check.
+//!    This is fast and simple to implement.
+//!
+//! 2. **Legality filter** — for each pseudo-legal move, `make_move` is applied to a
+//!    temporary board and `is_in_check` tests whether the moving side's king is
+//!    attacked. Moves that leave the king in check are discarded.
+//!
+//! This is correct by construction: every move that passes the filter is legal.
+//! The cost is one `make_move` + `is_in_check` per candidate (typically 20–80).
+//!
+//! ## Perft
+//!
+//! [`perft`] counts leaf nodes at a given depth and is the standard method for
+//! validating move generators. `perft(start, 3)` must return `8902`.
+
 use crate::attack;
 use crate::bitboard::pop_lsb;
 use crate::board::Board;
@@ -5,7 +25,11 @@ use crate::moves::Move;
 use crate::piece::{Color, PieceKind};
 use crate::square::Square;
 
-/// Returns all legal moves from the given position.
+/// Returns all legal moves available to the side to move in the given position.
+///
+/// Generates pseudo-legal moves first, then filters out any that leave the moving
+/// side's king in check. The returned list is empty when the position is checkmate
+/// or stalemate.
 #[must_use]
 pub fn generate_legal_moves(board: &Board) -> Vec<Move> {
     generate_pseudo_legal(board)
@@ -253,8 +277,16 @@ fn castling_moves(board: &Board, color: Color, king_sq: Square) -> Vec<Move> {
     moves
 }
 
-/// Counts all nodes at exactly `depth` from the given position (perft).
-/// Used for correctness testing of move generation.
+/// Counts all leaf nodes reachable at exactly `depth` half-moves (perft).
+///
+/// This is the canonical correctness test for a move generator: any position
+/// mismatch against published perft tables indicates a bug.  At `depth == 0`
+/// the current position counts as one node.
+///
+/// Expected values from the standard starting position:
+/// - `perft(start, 1)` = 20
+/// - `perft(start, 2)` = 400
+/// - `perft(start, 3)` = 8902
 #[must_use]
 pub fn perft(board: &Board, depth: u32) -> u64 {
     let _span = tracing::debug_span!("perft", depth).entered();

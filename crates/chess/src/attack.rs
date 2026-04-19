@@ -1,3 +1,29 @@
+//! Pre-computed attack tables and ray-casting for all piece types.
+//!
+//! ## Tables
+//!
+//! Attack tables are initialised once at first use via [`std::sync::OnceLock`] and
+//! stored in static memory. There are four table types:
+//!
+//! - **Knight** — 64 precomputed bitboards, one per square.
+//! - **King** — 64 precomputed bitboards, one per square.
+//! - **Pawn** — 2 × 64 precomputed bitboards (one set per color).
+//! - **Ray** — 64 × 8 precomputed bitboards. Each entry is the set of squares
+//!   reachable from a given square in one of 8 directions, excluding the origin.
+//!
+//! ## Sliding piece attacks (ray casting)
+//!
+//! The 8 directions are indexed: N=0, NE=1, E=2, NW=3, S=4, SW=5, W=6, SE=7.
+//!
+//! For each ray direction from a given square:
+//! 1. Intersect the precomputed ray bitboard with the occupied squares.
+//! 2. Find the first blocker along the ray (LSB for positive rays, MSB for negative).
+//! 3. Mask out everything beyond that blocker — the blocker's own square is included
+//!    (it can be captured).
+//!
+//! Using precomputed rays makes each direction O(1). Rook attacks = N+S+E+W rays;
+//! bishop = NE+NW+SE+SW.
+
 use std::sync::OnceLock;
 
 use crate::piece::Color;
@@ -177,44 +203,58 @@ pub fn sliding_attacks(sq: Square, occupied: u64, dirs: &[usize]) -> u64 {
     attacks
 }
 
-/// Rook attacks from `sq` with `occupied`.
+/// Returns the bitboard of squares a rook on `sq` can reach given `occupied` squares.
+///
+/// Casts rays in the N, E, S, and W directions; blockers are included (capturable).
 #[must_use]
 pub fn rook_attacks(sq: Square, occupied: u64) -> u64 {
     sliding_attacks(sq, occupied, &[N, E, S, W])
 }
 
-/// Bishop attacks from `sq` with `occupied`.
+/// Returns the bitboard of squares a bishop on `sq` can reach given `occupied` squares.
+///
+/// Casts rays in the NE, NW, SW, and SE directions; blockers are included (capturable).
 #[must_use]
 pub fn bishop_attacks(sq: Square, occupied: u64) -> u64 {
     sliding_attacks(sq, occupied, &[NE, NW, SW, SE])
 }
 
-/// Queen attacks from `sq` with `occupied`.
+/// Returns the bitboard of squares a queen on `sq` can reach given `occupied` squares.
+///
+/// Equivalent to `rook_attacks | bishop_attacks` for the same square.
 #[must_use]
 pub fn queen_attacks(sq: Square, occupied: u64) -> u64 {
     rook_attacks(sq, occupied) | bishop_attacks(sq, occupied)
 }
 
-/// Knight attacks from `sq`.
+/// Returns the precomputed bitboard of squares a knight on `sq` can jump to.
+///
+/// The result is independent of occupied squares because knights leap over pieces.
 #[must_use]
 pub fn knight_attacks(sq: Square) -> u64 {
     get_tables().knight[sq.index() as usize]
 }
 
-/// King attacks from `sq`.
+/// Returns the precomputed bitboard of squares a king on `sq` can move to (one step in any direction).
+///
+/// The result is independent of occupied squares; legality filtering is done by the caller.
 #[must_use]
 pub fn king_attacks(sq: Square) -> u64 {
     get_tables().king[sq.index() as usize]
 }
 
-/// Pawn attack squares for a pawn of `color` on `sq`.
+/// Returns the bitboard of squares attacked diagonally by a pawn of `color` on `sq`.
+///
+/// White pawns attack toward higher ranks; black pawns attack toward lower ranks.
+/// This does **not** include forward pushes, only diagonal captures.
 #[must_use]
 pub fn pawn_attacks(color: Color, sq: Square) -> u64 {
     get_tables().pawn[color as usize][sq.index() as usize]
 }
 
-/// All squares attacked by `color` given the board's piece bitboards.
-/// Used to detect check and validate castling transit squares.
+/// Returns the union of all squares attacked by every piece of `color`.
+///
+/// Used to detect check and to validate that castling transit squares are not under attack.
 #[must_use]
 pub fn all_attacks(color: Color, pieces: &[[u64; 6]; 2], occupied: u64) -> u64 {
     let ci = color as usize;
