@@ -17,6 +17,8 @@
 
 use std::sync::Arc;
 
+use rayon::prelude::*;
+
 use crate::{gpu, tensor_impl::{GradFn, Tensor}};
 
 // ── Internal CPU math helpers ──────────────────────────────────────��──────────
@@ -49,9 +51,18 @@ fn matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
 /// Transpose a 2-D matrix [m×n] → [n×m].
 fn transpose_2d(a: &[f32], m: usize, n: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; m * n];
-    for i in 0..m {
-        for j in 0..n {
-            out[j * m + i] = a[i * n + j];
+    if m * n > 65_536 {
+        // Parallel: each output row (one column of input) is independent.
+        out.par_chunks_mut(m).enumerate().for_each(|(j, row)| {
+            for i in 0..m {
+                row[i] = a[i * n + j];
+            }
+        });
+    } else {
+        for i in 0..m {
+            for j in 0..n {
+                out[j * m + i] = a[i * n + j];
+            }
         }
     }
     out
@@ -927,20 +938,21 @@ fn im2col(
     let w_out = w + 2 * pad - kw + 1;
     let col_rows = h_out * w_out;
     let col_cols = c_in * kh * kw;
-    let mut cols = vec![0.0f32; n * col_rows * col_cols];
-    let h_i = h as isize;
-    let w_i = w as isize;
-    let pad_i = pad as isize;
-    for ni in 0..n {
+    let item = col_rows * col_cols;
+    let mut cols = vec![0.0f32; n * item];
+    // Parallel over batch items — each writes to a non-overlapping slice.
+    cols.par_chunks_mut(item).enumerate().for_each(|(ni, chunk)| {
+        let h_i = h as isize;
+        let w_i = w as isize;
+        let pad_i = pad as isize;
         for ci in 0..c_in {
             for ki in 0..kh {
                 for kj in 0..kw {
+                    let col_col = ci * kh * kw + ki * kw + kj;
                     for hi in 0..h_out {
+                        let src_h = hi as isize + ki as isize - pad_i;
                         for wi in 0..w_out {
-                            let src_h = hi as isize + ki as isize - pad_i;
                             let src_w = wi as isize + kj as isize - pad_i;
-                            let col_row = hi * w_out + wi;
-                            let col_col = ci * kh * kw + ki * kw + kj;
                             let val = if src_h >= 0 && src_h < h_i && src_w >= 0 && src_w < w_i {
                                 input[ni * c_in * h * w
                                     + ci * h * w
@@ -949,20 +961,22 @@ fn im2col(
                             } else {
                                 0.0
                             };
-                            cols[ni * col_rows * col_cols + col_row * col_cols + col_col] = val;
+                            chunk[(hi * w_out + wi) * col_cols + col_col] = val;
                         }
                     }
                 }
             }
         }
-    }
+    });
     (cols, h_out, w_out)
 }
 
-/// col2im: accumulate column gradients back into input gradient `[N, C_in, H, W]`.
-fn col2im_add(
+/// col2im: maps column gradients back to input gradient `[N, C_in, H, W]`.
+///
+/// Uses a gather pattern (each output pixel independently accumulates its kH×kW
+/// contributions from `cols`) so the computation is parallel with no write conflicts.
+fn col2im(
     cols: &[f32],
-    d_input: &mut [f32],
     n: usize,
     c_in: usize,
     h: usize,
@@ -972,34 +986,37 @@ fn col2im_add(
     pad: usize,
     h_out: usize,
     w_out: usize,
-) {
+) -> Vec<f32> {
     let col_cols = c_in * kh * kw;
-    let h_i = h as isize;
-    let w_i = w as isize;
-    let pad_i = pad as isize;
-    for ni in 0..n {
+    let item = c_in * h * w;
+    let mut d_input = vec![0.0f32; n * item];
+    // Parallel over batch items — each writes to a non-overlapping slice.
+    d_input.par_chunks_mut(item).enumerate().for_each(|(ni, chunk)| {
+        let pad_i = pad as isize;
+        let h_out_i = h_out as isize;
+        let w_out_i = w_out as isize;
+        let cols_n = &cols[ni * h_out * w_out * col_cols..];
         for ci in 0..c_in {
-            for ki in 0..kh {
-                for kj in 0..kw {
-                    for hi in 0..h_out {
-                        for wi in 0..w_out {
-                            let src_h = hi as isize + ki as isize - pad_i;
-                            let src_w = wi as isize + kj as isize - pad_i;
-                            if src_h >= 0 && src_h < h_i && src_w >= 0 && src_w < w_i {
-                                let col_row = hi * w_out + wi;
-                                let col_col = ci * kh * kw + ki * kw + kj;
-                                d_input[ni * c_in * h * w
-                                    + ci * h * w
-                                    + src_h as usize * w
-                                    + src_w as usize] += cols
-                                    [ni * h_out * w_out * col_cols + col_row * col_cols + col_col];
-                            }
+            for src_h in 0..h {
+                for src_w in 0..w {
+                    let mut acc = 0.0f32;
+                    for ki in 0..kh {
+                        let hi = src_h as isize + pad_i - ki as isize;
+                        if hi < 0 || hi >= h_out_i { continue; }
+                        for kj in 0..kw {
+                            let wi = src_w as isize + pad_i - kj as isize;
+                            if wi < 0 || wi >= w_out_i { continue; }
+                            let col_row = hi as usize * w_out + wi as usize;
+                            let col_col = ci * kh * kw + ki * kw + kj;
+                            acc += cols_n[col_row * col_cols + col_col];
                         }
                     }
+                    chunk[ci * h * w + src_h * w + src_w] = acc;
                 }
             }
         }
-    }
+    });
+    d_input
 }
 
 struct Conv2dBackward {
@@ -1029,16 +1046,17 @@ impl GradFn for Conv2dBackward {
         let col_cols = self.c_in * self.kh * self.kw;
         // Reorder g from [N, C_out, H_out, W_out] to [N, H_out*W_out, C_out]
         let mut g_mat = vec![0.0f32; n * col_rows * c_out];
-        for ni in 0..n {
+        // Parallel over batch items — each writes to a non-overlapping slice.
+        g_mat.par_chunks_mut(col_rows * c_out).enumerate().for_each(|(ni, chunk)| {
             for co in 0..c_out {
                 for hi in 0..h_out {
                     for wi in 0..w_out {
-                        g_mat[ni * col_rows * c_out + (hi * w_out + wi) * c_out + co] =
+                        chunk[(hi * w_out + wi) * c_out + co] =
                             g[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
                     }
                 }
             }
-        }
+        });
         // weight: [C_out, C_in*kH*kW]
         let w_data = self.weight.data();
         if self.weight.requires_grad() {
@@ -1053,36 +1071,24 @@ impl GradFn for Conv2dBackward {
         }
         if self.bias.requires_grad() {
             // d_bias[co] = sum over N, H_out, W_out of g[N, co, H_out, W_out]
+            // Parallel over channels — each co accumulates independently.
             let mut db = vec![0.0f32; c_out];
-            for ni in 0..n {
-                for co in 0..c_out {
+            db.par_iter_mut().enumerate().for_each(|(co, db_co)| {
+                for ni in 0..n {
                     for hi in 0..h_out {
                         for wi in 0..w_out {
-                            db[co] += g
-                                [ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
+                            *db_co +=
+                                g[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
                         }
                     }
                 }
-            }
+            });
             self.bias.accumulate_grad(&db);
         }
         if self.input.requires_grad() {
             // d_cols = g_mat @ weight  ([N*HW, C_out] @ [C_out, col_cols] = [N*HW, col_cols])
             let d_cols = matmul_2d(&g_mat, &w_data, n * col_rows, c_out, col_cols);
-            let mut d_input = vec![0.0f32; n * self.c_in * self.h * self.w];
-            col2im_add(
-                &d_cols,
-                &mut d_input,
-                n,
-                self.c_in,
-                self.h,
-                self.w,
-                self.kh,
-                self.kw,
-                self.pad,
-                h_out,
-                w_out,
-            );
+            let d_input = col2im(&d_cols, n, self.c_in, self.h, self.w, self.kh, self.kw, self.pad, h_out, w_out);
             self.input.accumulate_grad(&d_input);
         }
     }
@@ -1118,18 +1124,20 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
     let wt = transpose_2d(&weight_data, c_out, col_cols);
     let out_mat = matmul_2d(&cols, &wt, n * col_rows, col_cols, c_out);
     // Reorder [N, H_out*W_out, C_out] → [N, C_out, H_out, W_out] and add bias.
+    // Reorder [N, H_out*W_out, C_out] → [N, C_out, H_out, W_out] and add bias.
+    // Parallel over batch items — each writes to a non-overlapping slice.
     let mut data = vec![0.0f32; n * c_out * h_out * w_out];
-    for ni in 0..n {
+    data.par_chunks_mut(c_out * h_out * w_out).enumerate().for_each(|(ni, chunk)| {
         for co in 0..c_out {
             for hi in 0..h_out {
                 for wi in 0..w_out {
-                    data[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi] =
+                    chunk[co * h_out * w_out + hi * w_out + wi] =
                         out_mat[ni * col_rows * c_out + (hi * w_out + wi) * c_out + co]
                             + bias_data[co];
                 }
             }
         }
-    }
+    });
     let needs_grad = input.requires_grad() || weight.requires_grad() || bias.requires_grad();
     if needs_grad {
         Tensor::from_op(

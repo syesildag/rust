@@ -12,4 +12,5 @@ pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 rand = "0.8"
 rand_distr = "0.4"
+rayon.workspace = true
 tracing.workspace = true
