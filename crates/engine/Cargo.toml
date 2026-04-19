@@ -9,3 +9,4 @@ workspace = true
 [dependencies]
 chess  = { path = "../chess" }
 tensor = { path = "../tensor" }
+tracing.workspace = true

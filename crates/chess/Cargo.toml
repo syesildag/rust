@@ -3,5 +3,8 @@ name = "chess"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+tracing.workspace = true
+
 [lints]
 workspace = true

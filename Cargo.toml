@@ -14,3 +14,7 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 pedantic = "warn"
+
+[workspace.dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
