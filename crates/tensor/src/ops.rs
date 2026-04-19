@@ -78,7 +78,9 @@ impl GradFn for AddBackward {
     }
 }
 
-/// Element-wise addition.  Both tensors must have the same shape.
+/// Element-wise addition of two tensors.
+///
+/// Both tensors must have identical shapes. Output shape equals input shape.
 #[must_use]
 pub fn add(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(
@@ -130,7 +132,9 @@ impl GradFn for SubBackward {
     }
 }
 
-/// Element-wise subtraction.
+/// Element-wise subtraction of two tensors.
+///
+/// Both tensors must have identical shapes. Output shape equals input shape.
 #[must_use]
 pub fn sub(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(a.shape(), b.shape());
@@ -173,7 +177,9 @@ impl GradFn for MulScalarBackward {
     }
 }
 
-/// Multiply all elements by a constant scalar.
+/// Multiplies all elements of `x` by the `f32` scalar `s`.
+///
+/// Output shape equals input shape.
 #[must_use]
 pub fn mul_scalar(x: &Tensor, s: f32) -> Tensor {
     let data: Vec<f32> = x.data().iter().map(|v| v * s).collect();
@@ -299,7 +305,15 @@ impl GradFn for LinearBackward {
     }
 }
 
-/// Fused `input @ weight.T + bias`.  `input`: `[S, in]`, `weight`: `[out, in]`, `bias`: `[out]`.
+/// Fused linear transformation: `input @ weight.T + bias`.
+///
+/// - `input`:  `[S, in_features]`
+/// - `weight`: `[out_features, in_features]`
+/// - `bias`:   `[out_features]`
+/// - Output:   `[S, out_features]`
+///
+/// # Panics
+/// Panics if `input` or `weight` is not 2-D, or their feature dimensions don't match.
 #[must_use]
 pub fn linear(input: &Tensor, weight: &Tensor, bias: &Tensor) -> Tensor {
     let si = input.shape();
@@ -357,6 +371,8 @@ impl GradFn for ReluBackward {
 }
 
 /// Rectified linear unit: `max(0, x)`.
+///
+/// Element-wise; output shape equals input shape.
 #[must_use]
 pub fn relu(x: &Tensor) -> Tensor {
     let src = x.data();
@@ -419,6 +435,9 @@ impl GradFn for GeluBackward {
 }
 
 /// Gaussian Error Linear Unit (GELU) activation.
+///
+/// Uses the tanh approximation: `0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))`.
+/// Element-wise; output shape equals input shape.
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     let src = x.data();
@@ -461,6 +480,8 @@ impl GradFn for TanhBackward {
 }
 
 /// Element-wise hyperbolic tangent.
+///
+/// Element-wise; output shape equals input shape.
 #[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {
     let src = x.data();
@@ -526,6 +547,13 @@ impl GradFn for SoftmaxBackward {
 }
 
 /// Row-wise softmax on a 2-D tensor `[S, D]`.
+///
+/// Applies numerically stable softmax independently to each row.
+/// Each row of the output sums to 1 along the last dimension.
+/// Output shape equals input shape `[S, D]`.
+///
+/// # Panics
+/// Panics if `x` is not 2-D.
 #[must_use]
 pub fn softmax(x: &Tensor) -> Tensor {
     let s_x = x.shape();
@@ -621,7 +649,11 @@ impl GradFn for LayerNormBackward {
 
 /// Layer normalisation over the last dimension.
 ///
+/// Normalises `x` along dimension `D`, then scales by `gamma` and shifts by `beta`.
 /// `x`: `[S, D]`, `gamma`: `[D]`, `beta`: `[D]` → `[S, D]`.
+///
+/// # Panics
+/// Panics if `x` is not 2-D.
 #[must_use]
 pub fn layer_norm(x: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) -> Tensor {
     let sx = x.shape();
@@ -687,8 +719,13 @@ impl GradFn for CatBackward {
     }
 }
 
-/// Concatenate tensors along axis 0.  All tensors must have the same rank
-/// and matching dimensions on all axes except 0.
+/// Concatenates 2-D tensors along axis 0 (rows).
+///
+/// All tensors must have the same number of columns.
+/// Input tensors of shapes `[r₁, C]`, `[r₂, C]`, … → output `[r₁+r₂+…, C]`.
+///
+/// # Panics
+/// Panics if `tensors` is empty or column counts differ.
 #[must_use]
 pub fn cat(tensors: &[&Tensor]) -> Tensor {
     assert!(!tensors.is_empty(), "cat: empty input list");
@@ -745,7 +782,13 @@ impl GradFn for CatColsBackward {
     }
 }
 
-/// Concatenate 2-D tensors along dim=1 (columns).  All must have the same number of rows.
+/// Concatenates 2-D tensors along axis 1 (columns).
+///
+/// All tensors must have the same number of rows.
+/// Input tensors of shapes `[R, c₁]`, `[R, c₂]`, … → output `[R, c₁+c₂+…]`.
+///
+/// # Panics
+/// Panics if `tensors` is empty or row counts differ.
 #[must_use]
 pub fn cat_cols(tensors: &[&Tensor]) -> Tensor {
     assert!(!tensors.is_empty(), "cat_cols: empty input list");
@@ -802,7 +845,12 @@ impl GradFn for SelectRowBackward {
     }
 }
 
-/// Extract row `i` from a 2-D tensor `[S, D]` → `[1, D]` with grad support.
+/// Extracts row `i` from a 2-D tensor, preserving gradient flow.
+///
+/// Input `[S, D]`, index `i` (must be `< S`) → output `[1, D]`.
+///
+/// # Panics
+/// Panics if `x` is not 2-D or `i` is out of bounds.
 #[must_use]
 pub fn select_row(x: &Tensor, i: usize) -> Tensor {
     let s = x.shape();
@@ -1016,12 +1064,16 @@ impl GradFn for Conv2dBackward {
     }
 }
 
-/// 2-D convolution.
+/// 2-D convolution with optional zero-padding.
 ///
-/// `input`: `[N, C_in, H, W]`, `weight`: `[C_out, C_in, kH, kW]`, `bias`: `[C_out]`.
+/// - `input`:   `[N, C_in, H, W]`
+/// - `weight`:  `[C_out, C_in, kH, kW]`
+/// - `bias`:    `[C_out]`
+/// - Output:    `[N, C_out, H_out, W_out]` where
+///   `H_out = H + 2*padding - kH + 1` and `W_out = W + 2*padding - kW + 1`.
 ///
 /// # Panics
-/// Panics if shapes are inconsistent.
+/// Panics if `input` is not 4-D, `weight` is not 4-D, or channel counts are inconsistent.
 #[must_use]
 pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) -> Tensor {
     let si = input.shape();
@@ -1156,9 +1208,18 @@ impl GradFn for BatchNorm2dBackward {
     }
 }
 
-/// Batch normalisation for 4-D tensors `[N, C, H, W]`.
+/// Batch normalisation for 4-D tensors.
 ///
-/// Normalises over the N, H, W dimensions for each channel C.
+/// Normalises each channel `C` over the `N`, `H`, `W` dimensions, then scales
+/// by `gamma` and shifts by `beta`.
+///
+/// - `input`:  `[N, C, H, W]`
+/// - `gamma`:  `[C]`
+/// - `beta`:   `[C]`
+/// - Output:   `[N, C, H, W]` (same shape as input)
+///
+/// # Panics
+/// Panics if `input` is not 4-D.
 #[must_use]
 pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) -> Tensor {
     let si = input.shape();
@@ -1246,7 +1307,8 @@ impl GradFn for MseLossBackward {
 
 /// Mean-squared error loss between a predicted tensor and a scalar target.
 ///
-/// Returns a scalar `Tensor`.
+/// Computes `mean((pred - target)²)` over all elements of `pred`.
+/// Returns a scalar `Tensor` with shape `[1]`.
 #[must_use]
 pub fn mse_loss(pred: &Tensor, target: f32) -> Tensor {
     let data = pred.data();
@@ -1284,7 +1346,7 @@ impl GradFn for SumBackward {
     }
 }
 
-/// Sum all elements, returning a scalar tensor.
+/// Sums all elements of `x`, returning a scalar tensor with shape `[1]`.
 #[must_use]
 pub fn sum(x: &Tensor) -> Tensor {
     let s: f32 = x.data().iter().sum();
