@@ -123,25 +123,28 @@ impl HybridValueNet {
         // 2. CNN backbone → [B, 256, 8, 8]
         let x = self.backbone.forward(&x);
 
-        // 3. Per-item transformer; collect CLS output for each item.
+        // 3. Build [B, 65, 256]: prepend CLS token + add positional embeddings per item.
+        let mut seqs: Vec<Tensor> = Vec::with_capacity(b);
+        for i in 0..b {
+            let xi = ops::slice_batch(&x, i).reshape(&[64, D_MODEL]); // [64, 256]
+            let xi = ops::cat(&[&self.cls_token, &xi]);                // [65, 256]
+            seqs.push(ops::add(&xi, &self.pos_embed));
+        }
+        let seq_refs: Vec<&Tensor> = seqs.iter().collect();
+        let x = ops::stack(&seq_refs); // [B, 65, 256]
+
+        // 4. Batched transformer → [B, 65, 256]
+        let x = self.encoder.forward_batched(&x, b);
+
+        // 5. Extract CLS (row 0) per item → stack → [B, 256]
         let mut cls_outputs: Vec<Tensor> = Vec::with_capacity(b);
         for i in 0..b {
-            // [256, 8, 8]
-            let xi = ops::slice_batch(&x, i);
-            // [64, 256]
-            let xi = xi.reshape(&[64, D_MODEL]);
-            // [65, 256]
-            let xi = ops::cat(&[&self.cls_token, &xi]);
-            let xi = ops::add(&xi, &self.pos_embed);
-            let xi = self.encoder.forward(&xi);
-            // [1, 256]
-            let cls = ops::select_row(&xi, 0);
-            cls_outputs.push(cls);
+            cls_outputs.push(ops::select_row(&ops::slice_batch(&x, i), 0));
         }
+        let cls_refs: Vec<&Tensor> = cls_outputs.iter().collect();
+        let x = ops::cat(&cls_refs); // [B, 256]
 
-        // 4. Stack → [B, 256], project → [B, 1], tanh → [B, 1]
-        let refs: Vec<&Tensor> = cls_outputs.iter().collect();
-        let x = ops::cat(&refs);
+        // 6. Project → [B, 1], tanh → [B, 1]
         ops::tanh(&self.head.forward(&x))
     }
 

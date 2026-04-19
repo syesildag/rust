@@ -77,6 +77,35 @@ impl MultiHeadAttention {
         self.wo.forward(&concat)
     }
 
+    /// Forward for a batch of sequences: `[B, seq, d_model] → [B, seq, d_model]`.
+    ///
+    /// Projects Q/K/V for all B*seq tokens in one matmul per head, then uses
+    /// batched matmul for attention scores and context aggregation.
+    #[must_use]
+    pub fn forward_batched(&self, x: &Tensor, batch: usize) -> Tensor {
+        let shape = x.shape();
+        let (seq, d_model) = (shape[1], shape[2]);
+        let scale = 1.0 / (self.d_k as f32).sqrt();
+        let x_2d = x.reshape(&[batch * seq, d_model]);
+
+        let head_tensors: Vec<Tensor> = (0..self.num_heads)
+            .map(|head| {
+                let query = self.wq[head].forward(&x_2d).reshape(&[batch, seq, self.d_k]);
+                let key = self.wk[head].forward(&x_2d).reshape(&[batch, seq, self.d_k]);
+                let val = self.wv[head].forward(&x_2d).reshape(&[batch, seq, self.d_k]);
+                let kt = ops::transpose_last_two(&key); // [B, d_k, seq]
+                let scores = ops::mul_scalar(&ops::matmul_batched(&query, &kt), scale); // [B, seq, seq]
+                let attn = ops::softmax(&scores.reshape(&[batch * seq, seq]))
+                    .reshape(&[batch, seq, seq]);
+                ops::matmul_batched(&attn, &val).reshape(&[batch * seq, self.d_k]) // [B*seq, d_k]
+            })
+            .collect();
+
+        let refs: Vec<&Tensor> = head_tensors.iter().collect();
+        let concat = ops::cat_cols(&refs); // [B*seq, d_model]
+        self.wo.forward(&concat).reshape(&[batch, seq, d_model])
+    }
+
     /// Returns all learnable parameters.
     #[must_use]
     pub fn parameters(&self) -> Vec<Tensor> {

@@ -1380,6 +1380,107 @@ pub fn sum(x: &Tensor) -> Tensor {
     }
 }
 
+// ── stack ─────────────────────────────────────────────────────────────────────
+
+struct StackBackward {
+    inputs: Vec<Tensor>,
+    item_size: usize,
+}
+impl GradFn for StackBackward {
+    fn inputs(&self) -> Vec<Tensor> { self.inputs.clone() }
+    fn backward(&self, g: &[f32]) {
+        for (i, t) in self.inputs.iter().enumerate() {
+            if t.requires_grad() {
+                t.accumulate_grad(&g[i * self.item_size..(i + 1) * self.item_size]);
+            }
+        }
+    }
+}
+
+/// Stacks equal-shaped tensors into a new leading batch dimension.
+///
+/// B tensors of shape `[...]` → `[B, ...]`.
+///
+/// # Panics
+/// Panics if the input list is empty or shapes differ.
+#[must_use]
+pub fn stack(tensors: &[&Tensor]) -> Tensor {
+    assert!(!tensors.is_empty(), "stack: empty input");
+    let item_shape = tensors[0].shape().to_vec();
+    let item_size: usize = item_shape.iter().product();
+    let b = tensors.len();
+    let mut out_shape = vec![b];
+    out_shape.extend_from_slice(&item_shape);
+    let mut data = Vec::with_capacity(b * item_size);
+    for t in tensors {
+        assert_eq!(t.shape(), item_shape.as_slice(), "stack: shape mismatch");
+        data.extend_from_slice(&t.data());
+    }
+    let needs_grad = tensors.iter().any(|t| t.requires_grad());
+    let inputs: Vec<Tensor> = tensors.iter().map(|t| (*t).clone()).collect();
+    if needs_grad {
+        Tensor::from_op(data, &out_shape, Arc::new(StackBackward { inputs, item_size }))
+    } else {
+        Tensor::from_vec(data, &out_shape)
+    }
+}
+
+// ── transpose_last_two ────────────────────────────────────────────────────────
+
+struct TransposeLastTwoBackward {
+    input: Tensor,
+    b: usize,
+    m: usize,
+    n: usize,
+}
+impl GradFn for TransposeLastTwoBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let (b, m, n) = (self.b, self.m, self.n);
+            // grad is [B, N, M]; rotate back to [B, M, N]
+            let mut d = vec![0.0f32; b * m * n];
+            for bi in 0..b {
+                for i in 0..m {
+                    for j in 0..n {
+                        d[bi * m * n + i * n + j] = g[bi * n * m + j * m + i];
+                    }
+                }
+            }
+            self.input.accumulate_grad(&d);
+        }
+    }
+}
+
+/// Transposes the last two dimensions of a 3-D tensor: `[B, M, N] → [B, N, M]`.
+///
+/// # Panics
+/// Panics if the tensor is not 3-D.
+#[must_use]
+pub fn transpose_last_two(x: &Tensor) -> Tensor {
+    let s = x.shape();
+    assert_eq!(s.len(), 3, "transpose_last_two: expected 3-D tensor, got {s:?}");
+    let (b, m, n) = (s[0], s[1], s[2]);
+    let src = x.data();
+    let mut out = vec![0.0f32; b * m * n];
+    for bi in 0..b {
+        for i in 0..m {
+            for j in 0..n {
+                out[bi * n * m + j * m + i] = src[bi * m * n + i * n + j];
+            }
+        }
+    }
+    if x.requires_grad() {
+        Tensor::from_op(
+            out,
+            &[b, n, m],
+            Arc::new(TransposeLastTwoBackward { input: x.clone(), b, m, n }),
+        )
+    } else {
+        Tensor::from_vec(out, &[b, n, m])
+    }
+}
+
 // ── matmul_batched ────────────────────────────────────────────────────────────
 
 struct MatMulBatchedBackward {
