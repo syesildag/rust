@@ -17,7 +17,9 @@
 //!
 //! For each ray direction from a given square:
 //! 1. Intersect the precomputed ray bitboard with the occupied squares.
-//! 2. Find the first blocker along the ray (LSB for positive rays, MSB for negative).
+//! 2. Find the first blocker: for positive rays, the LSB of `ray & occupied` directly
+//!    gives the blocker; for negative rays, the occupancy is bit-reversed and the same
+//!    LSB technique is applied on the mirror (equivalent to finding the MSB in the original).
 //! 3. Mask out everything beyond that blocker — the blocker's own square is included
 //!    (it can be captured).
 //!

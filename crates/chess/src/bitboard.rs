@@ -19,8 +19,9 @@ pub const fn clear_bit(bb: Bitboard, sq: Square) -> Bitboard {
 
 /// Returns the square of the least-significant set bit.
 ///
-/// # Panics
-/// Calling with `bb == 0` produces an out-of-range square index; callers must ensure `bb != 0`.
+/// # Correctness
+/// `bb` must be non-zero. Calling with `bb == 0` returns `Square(64)`, an invalid
+/// square that will cause incorrect results if used in subsequent operations.
 #[must_use]
 pub fn lsb_square(bb: Bitboard) -> Square {
     #[allow(clippy::cast_possible_truncation)]
@@ -29,8 +30,9 @@ pub fn lsb_square(bb: Bitboard) -> Square {
 
 /// Clears the least-significant set bit of `*bb` in place and returns its square.
 ///
-/// # Panics
-/// Calling with `*bb == 0` produces an out-of-range square index; callers must ensure `*bb != 0`.
+/// # Correctness
+/// `bb` must be non-zero. Calling with `bb == 0` returns `Square(64)`, an invalid
+/// square that will cause incorrect results if used in subsequent operations.
 #[must_use]
 pub fn pop_lsb(bb: &mut Bitboard) -> Square {
     let sq = lsb_square(*bb);
