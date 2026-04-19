@@ -14,16 +14,28 @@ pub const BK: u8 = 4; // Black kingside
 pub const BQ: u8 = 8; // Black queenside
 
 /// The complete game state represented as 12 bitboards plus auxiliary fields.
+///
+/// Piece occupancy is stored as `pieces[color_index][piece_kind_index]` where each
+/// `u64` is a bitboard: bit `n` is set when that piece occupies square index `n`
+/// (a1 = bit 0, h8 = bit 63).  Color indices come from `Color as usize`
+/// (White = 0, Black = 1); piece indices come from [`PieceKind::index`].
+///
+/// `Board` is `Clone` and all mutating operations (see [`Board::make_move`]) return a
+/// new `Board` rather than modifying in place, making it straightforward to search
+/// without undo logic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     /// `pieces[color][piece_kind]` — bitboard of that piece type for that color.
     pub pieces: [[u64; 6]; 2],
+    /// The side whose turn it is to move.
     pub side_to_move: Color,
     /// Castling availability: bits 0=WK, 1=WQ, 2=BK, 3=BQ.
     pub castling: u8,
     /// En passant target square (the square the capturing pawn moves *to*).
     pub en_passant: Option<Square>,
+    /// Half-move counter since the last pawn move or capture; draw at 100.
     pub halfmove_clock: u8,
+    /// Full-move counter; incremented after each Black move, starting at 1.
     pub fullmove_number: u16,
 }
 

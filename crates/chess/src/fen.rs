@@ -9,11 +9,17 @@ use crate::square::Square;
 /// Errors that can occur while parsing a FEN string.
 #[derive(Debug)]
 pub enum FenError {
+    /// The FEN did not contain exactly 6 space-separated fields; holds the actual count.
     WrongFieldCount(usize),
+    /// A character in the piece-placement field is not a valid FEN piece letter.
     InvalidPieceChar(char),
+    /// A square string (e.g. the en passant field) could not be parsed.
     InvalidSquare(String),
+    /// The castling-rights field contained an unrecognised character.
     InvalidCastling(String),
+    /// The side-to-move field was neither `"w"` nor `"b"`.
     InvalidSideToMove(char),
+    /// The halfmove-clock or fullmove-number field could not be parsed as an integer.
     ParseInt(ParseIntError),
 }
 
