@@ -3,14 +3,31 @@ use chess::fen::from_fen;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
 use std::path::PathBuf;
+use tracing::info_span;
+use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        .with_span_events(FmtSpan::CLOSE)
+        .init();
+
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(String::as_str) {
-        Some("train") => cmd_train(&args[2..]),
-        Some("selfplay") => cmd_selfplay(&args[2..]),
-        Some("eval") => cmd_eval(&args[2..]),
+        Some("train") => {
+            let _span = info_span!("train").entered();
+            cmd_train(&args[2..]);
+        }
+        Some("selfplay") => {
+            let _span = info_span!("selfplay").entered();
+            cmd_selfplay(&args[2..]);
+        }
+        Some("eval") => {
+            let _span = info_span!("position-eval").entered();
+            cmd_eval(&args[2..]);
+        }
         _ => cmd_board(&args),
     }
 }
@@ -61,10 +78,7 @@ fn cmd_train(args: &[String]) {
         cfg.pgn_paths.push(PathBuf::from("games.pgn"));
     }
 
-    println!(
-        "Loading games from {} source(s)…",
-        cfg.pgn_paths.len()
-    );
+    println!("Loading games from {} source(s)…", cfg.pgn_paths.len());
     match train(cfg) {
         Ok(_model) => println!("Training complete."),
         Err(e) => {
