@@ -3,6 +3,7 @@
 use crate::fen_file::parse_fen_file;
 use crate::pgn::{parse_pgn, Sample};
 use std::path::Path;
+use tracing::{info, warn};
 
 /// A dataset of (board position, outcome) pairs for supervised training.
 pub struct ChessDataset {
@@ -42,7 +43,7 @@ impl ChessDataset {
                 let entries = match std::fs::read_dir(path) {
                     Ok(e) => e,
                     Err(e) => {
-                        eprintln!("Warning: cannot read dir {}: {e}", path.display());
+                        warn!(path = %path.display(), error = %e, "cannot read directory");
                         continue;
                     }
                 };
@@ -111,13 +112,13 @@ impl ChessDataset {
                     parse_pgn(&text)
                 };
                 self.samples.extend(new_samples);
-                println!(
-                    "  Loaded {} positions from {}",
-                    self.samples.len() - before,
-                    path.display()
+                info!(
+                    samples = self.samples.len() - before,
+                    path = %path.display(),
+                    "loaded file"
                 );
             }
-            Err(e) => eprintln!("Warning: cannot read {}: {e}", path.display()),
+            Err(e) => warn!(path = %path.display(), error = %e, "cannot read file"),
         }
     }
 }
@@ -131,9 +132,8 @@ impl Default for ChessDataset {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 fn is_fen_extension(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("fen") || ext.eq_ignore_ascii_case("epd")
-    })
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("fen") || ext.eq_ignore_ascii_case("epd"))
 }
 
 fn is_supported_extension(path: &Path) -> bool {
