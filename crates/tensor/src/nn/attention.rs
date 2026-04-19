@@ -17,7 +17,9 @@ pub struct MultiHeadAttention {
     wk: Vec<Linear>,
     wv: Vec<Linear>,
     wo: Linear,
+    /// Number of parallel attention heads.
     pub num_heads: usize,
+    /// Dimension of each head's key/query/value projections (`d_model / num_heads`).
     pub d_k: usize,
 }
 

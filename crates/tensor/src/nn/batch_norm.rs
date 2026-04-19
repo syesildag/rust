@@ -6,8 +6,11 @@ use crate::Tensor;
 /// Normalises each channel over the N×H×W dimensions.
 /// Learnable `gamma` (scale) and `beta` (shift), both `[C]`.
 pub struct BatchNorm2d {
+    /// Learnable per-channel scale parameter, shape `[C]`.
     pub gamma: Tensor,
+    /// Learnable per-channel shift parameter, shape `[C]`.
     pub beta: Tensor,
+    /// Small constant added to the variance for numerical stability.
     pub eps: f32,
 }
 

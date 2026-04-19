@@ -6,8 +6,11 @@ use crate::Tensor;
 /// Normalises `[S, D]` inputs along the `D` dimension.
 /// Learnable `gamma` (scale) and `beta` (shift), both `[D]`.
 pub struct LayerNorm {
+    /// Learnable per-feature scale parameter, shape `[D]`.
     pub gamma: Tensor,
+    /// Learnable per-feature shift parameter, shape `[D]`.
     pub beta: Tensor,
+    /// Small constant added to the variance for numerical stability.
     pub eps: f32,
 }
 

@@ -7,7 +7,9 @@ use crate::Tensor;
 
 /// A fully-connected layer with learnable `weight` `[out, in]` and optional `bias` `[out]`.
 pub struct Linear {
+    /// Weight matrix, shape `[out_features, in_features]`.
     pub weight: Tensor,
+    /// Bias vector, shape `[out_features]`. Not tracked by the optimizer when `use_bias` is `false`.
     pub bias: Tensor,
 }
 

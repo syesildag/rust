@@ -10,8 +10,11 @@ use crate::Tensor;
 /// - `weight`: `[C_out, C_in, kH, kW]`
 /// - `bias`:   `[C_out]`
 pub struct Conv2d {
+    /// Convolutional filter weights, shape `[C_out, C_in, kH, kW]`.
     pub weight: Tensor,
+    /// Per-output-channel bias, shape `[C_out]`.
     pub bias: Tensor,
+    /// Zero-padding applied to height and width dimensions.
     pub padding: usize,
 }
 
