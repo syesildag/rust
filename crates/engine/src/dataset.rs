@@ -1,5 +1,6 @@
 //! `ChessDataset`: holds (Board, outcome) samples and provides shuffled mini-batches.
 
+use crate::fen_file::parse_fen_file;
 use crate::pgn::{parse_pgn, Sample};
 use std::path::Path;
 
@@ -28,10 +29,11 @@ impl ChessDataset {
         })
     }
 
-    /// Loads PGN games from multiple files (or a directory of `.pgn` files).
+    /// Loads positions from multiple files or directories.
     ///
-    /// If a path is a directory, every `*.pgn` file inside it is loaded.
-    /// Files that cannot be read are skipped with a warning printed to stderr.
+    /// Supports `.pgn`, `.fen`, and `.epd` files.  Directories are scanned for
+    /// all files with those extensions.  Unreadable files are skipped with a
+    /// warning on stderr.
     #[must_use]
     pub fn from_pgn_files(paths: &[std::path::PathBuf]) -> Self {
         let mut ds = Self::new();
@@ -44,34 +46,19 @@ impl ChessDataset {
                         continue;
                     }
                 };
-                let mut pgn_paths: Vec<_> = entries
+                let mut found: Vec<_> = entries
                     .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pgn")))
+                    .filter(|p| is_supported_extension(p))
                     .collect();
-                pgn_paths.sort();
-                for pgn in &pgn_paths {
-                    ds.load_one(pgn);
+                found.sort();
+                for p in &found {
+                    ds.load_one(p);
                 }
             } else {
                 ds.load_one(path);
             }
         }
         ds
-    }
-
-    fn load_one(&mut self, path: &Path) {
-        match std::fs::read_to_string(path) {
-            Ok(text) => {
-                let before = self.samples.len();
-                self.samples.extend(parse_pgn(&text));
-                println!(
-                    "  Loaded {} positions from {}",
-                    self.samples.len() - before,
-                    path.display()
-                );
-            }
-            Err(e) => eprintln!("Warning: cannot read {}: {e}", path.display()),
-        }
     }
 
     /// Extends the dataset with additional samples (e.g. from self-play).
@@ -97,7 +84,6 @@ impl ChessDataset {
         if n < 2 {
             return;
         }
-        // LCG parameters from Knuth
         let mut rng = seed.wrapping_add(1);
         for i in (1..n).rev() {
             rng = rng
@@ -114,12 +100,48 @@ impl ChessDataset {
     pub fn batches(&self, size: usize) -> impl Iterator<Item = &[Sample]> {
         self.samples.chunks(size)
     }
+
+    fn load_one(&mut self, path: &Path) {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let before = self.samples.len();
+                let new_samples = if is_fen_extension(path) {
+                    parse_fen_file(&text)
+                } else {
+                    parse_pgn(&text)
+                };
+                self.samples.extend(new_samples);
+                println!(
+                    "  Loaded {} positions from {}",
+                    self.samples.len() - before,
+                    path.display()
+                );
+            }
+            Err(e) => eprintln!("Warning: cannot read {}: {e}", path.display()),
+        }
+    }
 }
 
 impl Default for ChessDataset {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+fn is_fen_extension(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("fen") || ext.eq_ignore_ascii_case("epd")
+    })
+}
+
+fn is_supported_extension(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("pgn")
+            || ext.eq_ignore_ascii_case("fen")
+            || ext.eq_ignore_ascii_case("epd")
+    })
 }
 
 #[cfg(test)]
@@ -151,7 +173,6 @@ mod tests {
         ds2.extend(dummy_samples(20));
         ds1.shuffle(42);
         ds2.shuffle(42);
-        // Deterministic seed → identical order (compare outcomes, boards are all same)
         for (a, b) in ds1.samples.iter().zip(ds2.samples.iter()) {
             assert_eq!(a.1, b.1);
         }

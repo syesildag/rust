@@ -11,6 +11,7 @@
 
 pub mod dataset;
 pub mod encode;
+pub mod fen_file;
 pub mod model;
 pub mod nn;
 pub mod pgn;
