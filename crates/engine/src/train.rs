@@ -104,5 +104,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         info!(avg_loss = avg, "epoch complete");
     }
 
+    model.save(&cfg.output)?;
+
     Ok(model)
 }

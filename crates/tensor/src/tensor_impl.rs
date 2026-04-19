@@ -218,6 +218,22 @@ impl Tensor {
         }
     }
 
+    /// Overwrites the tensor's data in-place.
+    ///
+    /// # Panics
+    /// Panics if `new_data.len()` does not match the tensor's element count.
+    pub fn set_data(&self, new_data: &[f32]) {
+        let mut d = self.inner.data.write().expect("data RwLock poisoned");
+        assert_eq!(
+            d.len(),
+            new_data.len(),
+            "set_data: length mismatch ({} vs {})",
+            d.len(),
+            new_data.len()
+        );
+        d.copy_from_slice(new_data);
+    }
+
     // ── Transforms ────────────────────────────────────────────────────────
 
     /// Returns a 2-D tensor transposed: `[M, N]` → `[N, M]`.

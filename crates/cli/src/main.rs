@@ -80,7 +80,7 @@ fn cmd_train(args: &[String]) {
 
     println!("Loading games from {} source(s)…", cfg.pgn_paths.len());
     match train(cfg) {
-        Ok(_model) => println!("Training complete."),
+        Ok(_model) => println!("Training complete. Model saved."),
         Err(e) => {
             eprintln!("Train error: {e}");
             std::process::exit(1);
@@ -91,8 +91,6 @@ fn cmd_train(args: &[String]) {
 // ─── eval ────────────────────────────────────────────────────────────────────
 
 fn cmd_eval(args: &[String]) {
-    use engine::model::HybridValueNet;
-
     let fen_str = flag_value(args, "--fen");
     let board = if let Some(f) = fen_str {
         match from_fen(f) {
@@ -106,7 +104,7 @@ fn cmd_eval(args: &[String]) {
         Board::starting_position()
     };
 
-    let model = HybridValueNet::new();
+    let model = load_or_new_model(args);
     let value = model.forward(&board).data()[0];
 
     println!("{board}");
@@ -117,14 +115,13 @@ fn cmd_eval(args: &[String]) {
 // ─── selfplay ────────────────────────────────────────────────────────────────
 
 fn cmd_selfplay(args: &[String]) {
-    use engine::model::HybridValueNet;
     use engine::selfplay::generate;
 
     let n: usize = flag_value(args, "--games")
         .and_then(|s| s.parse().ok())
         .unwrap_or(10);
 
-    let model = HybridValueNet::new();
+    let model = load_or_new_model(args);
     let dataset = generate(&model, n);
     println!(
         "Self-play complete: {n} games → {} positions",
@@ -182,6 +179,30 @@ fn cmd_board(args: &[String]) {
 }
 
 // ─── helper ──────────────────────────────────────────────────────────────────
+
+const DEFAULT_MODEL_PATH: &str = "model.bin";
+
+/// Loads a saved model from `--model PATH` (or the default `model.bin`) if the
+/// file exists; otherwise returns a fresh randomly-initialised model.
+fn load_or_new_model(args: &[String]) -> engine::HybridValueNet {
+    let path_str = flag_value(args, "--model").unwrap_or(DEFAULT_MODEL_PATH);
+    let path = std::path::Path::new(path_str);
+    if path.exists() {
+        match engine::HybridValueNet::load(path) {
+            Ok(m) => {
+                println!("Loaded model from {}", path.display());
+                m
+            }
+            Err(e) => {
+                eprintln!("Failed to load model from {}: {e}", path.display());
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!("No saved model found at {}; using random weights", path.display());
+        engine::HybridValueNet::new()
+    }
+}
 
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     args.windows(2)

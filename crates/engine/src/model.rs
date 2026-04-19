@@ -31,9 +31,12 @@
 use crate::encode::encode_batch;
 use crate::nn::ResNetBackbone;
 use chess::board::Board;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
 use tensor::nn::{Linear, TransformerEncoder};
 use tensor::{ops, Tensor};
-use tracing::trace_span;
+use tracing::{info, trace_span};
 
 const D_MODEL: usize = 256;
 const NUM_HEADS: usize = 8;
@@ -113,6 +116,93 @@ impl HybridValueNet {
         p.extend(self.encoder.parameters());
         p.extend(self.head.parameters());
         p
+    }
+
+    /// Saves all model parameters to a binary file.
+    ///
+    /// Format: `[u64 num_params] then for each param: [u64 ndim] [u64; ndim] [f32; numel]`.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the file cannot be written.
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        let params = self.parameters();
+        let f = File::create(path)?;
+        let mut w = BufWriter::new(f);
+
+        w.write_all(&(params.len() as u64).to_le_bytes())?;
+        for p in &params {
+            let shape = p.shape();
+            w.write_all(&(shape.len() as u64).to_le_bytes())?;
+            for &dim in shape {
+                w.write_all(&(dim as u64).to_le_bytes())?;
+            }
+            let data = p.data();
+            for &val in &data {
+                w.write_all(&val.to_le_bytes())?;
+            }
+        }
+        w.flush()?;
+        info!(path = %path.display(), params = params.len(), "model saved");
+        Ok(())
+    }
+
+    /// Loads model parameters from a binary file produced by [`Self::save`].
+    ///
+    /// Creates a fresh model and overwrites every parameter with the stored weights.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the file cannot be read or has mismatched parameter counts.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn load(path: &Path) -> std::io::Result<Self> {
+        let f = File::open(path)?;
+        let mut r = BufReader::new(f);
+
+        let mut buf8 = [0u8; 8];
+        let mut buf4 = [0u8; 4];
+
+        r.read_exact(&mut buf8)?;
+        let num_params = u64::from_le_bytes(buf8) as usize;
+
+        let model = Self::new();
+        let params = model.parameters();
+        if params.len() != num_params {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "parameter count mismatch: file has {num_params}, model expects {}",
+                    params.len()
+                ),
+            ));
+        }
+
+        for p in &params {
+            r.read_exact(&mut buf8)?;
+            let ndim = u64::from_le_bytes(buf8) as usize;
+            let mut shape = Vec::with_capacity(ndim);
+            for _ in 0..ndim {
+                r.read_exact(&mut buf8)?;
+                shape.push(u64::from_le_bytes(buf8) as usize);
+            }
+            if shape != p.shape() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("shape mismatch: file has {shape:?}, model expects {:?}", p.shape()),
+                ));
+            }
+            let numel: usize = shape.iter().product();
+            let mut data = Vec::with_capacity(numel);
+            for _ in 0..numel {
+                r.read_exact(&mut buf4)?;
+                data.push(f32::from_le_bytes(buf4));
+            }
+            p.set_data(&data);
+        }
+
+        // Explicitly drop BufReader to close the file before returning.
+        drop(r);
+
+        info!(path = %path.display(), params = num_params, "model loaded");
+        Ok(model)
     }
 }
 
