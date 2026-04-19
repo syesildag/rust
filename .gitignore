@@ -2,3 +2,4 @@
 data/
 .worktrees/
 librust_out.rlib
+model.bin
