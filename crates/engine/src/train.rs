@@ -7,6 +7,7 @@ use crate::model::HybridValueNet;
 use std::path::PathBuf;
 use tensor::optim::Adam;
 use tensor::{ops, Tensor};
+use tracing::{debug, info, info_span};
 
 /// Hyper-parameters for a training run.
 pub struct TrainConfig {
@@ -53,14 +54,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         ));
     }
 
-    println!(
-        "Training on {} positions for {} epochs (batch={})",
-        dataset.len(),
-        cfg.epochs,
-        cfg.batch_size
+    info!(
+        positions = dataset.len(),
+        epochs = cfg.epochs,
+        batch_size = cfg.batch_size,
+        "starting training"
     );
 
     for epoch in 0..cfg.epochs {
+        let epoch_span = info_span!("epoch", n = epoch + 1, total = cfg.epochs);
+        let _epoch_guard = epoch_span.enter();
+
         dataset.shuffle(epoch as u64);
         let mut total_loss = 0.0f32;
         let mut n_batches = 0usize;
@@ -89,6 +93,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
             total_loss += loss.data()[0];
             n_batches += 1;
+            debug!(batch = n_batches, loss = loss.data()[0], "batch");
         }
 
         let avg = if n_batches > 0 {
@@ -96,7 +101,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         } else {
             0.0
         };
-        println!("Epoch {:>3}: avg_loss = {avg:.6}", epoch + 1);
+        info!(avg_loss = avg, "epoch complete");
     }
 
     Ok(model)
