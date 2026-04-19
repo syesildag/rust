@@ -13,6 +13,20 @@
 //!   → Linear(256→1)
 //!   → tanh              ∈ (-1, +1)
 //! ```
+//!
+//! ## CLS token
+//!
+//! The CLS ("classification") token is a learnable vector prepended to the
+//! 64 square tokens before the transformer encoder. By the final layer, it has
+//! attended to all 64 squares and aggregates global board context. Extracting
+//! only the CLS output (row 0) gives a fixed-size representation suitable for
+//! the scalar head, without any positional bias.
+//!
+//! ## tanh output
+//!
+//! The final `tanh` bounds the output to (-1, +1), matching the training labels
+//! (+1.0 = White wins, -1.0 = Black wins, 0.0 = draw). Bounded output also
+//! stabilises MSE loss by preventing divergence during early training.
 
 use crate::encode::encode_batch;
 use crate::nn::ResNetBackbone;
@@ -35,12 +49,15 @@ const SEQ_LEN: usize = 65;
 ///
 /// Outputs a scalar in (-1, +1): positive = White advantage, negative = Black advantage.
 pub struct HybridValueNet {
+    /// ResNet CNN backbone extracting spatial features from the 17-plane board tensor.
     backbone: ResNetBackbone,
-    /// Learnable CLS token `[1, 256]`.
+    /// Learnable CLS token prepended to the 64 square tokens; shape `[1, 256]`.
     cls_token: Tensor,
-    /// Learnable positional embeddings `[65, 256]`.
+    /// Learnable positional embeddings for all 65 tokens (CLS + 64 squares); shape `[65, 256]`.
     pos_embed: Tensor,
+    /// Transformer encoder that mixes information across all 65 tokens.
     encoder: TransformerEncoder,
+    /// Linear projection from the 256-dim CLS embedding to a scalar evaluation.
     head: Linear,
 }
 

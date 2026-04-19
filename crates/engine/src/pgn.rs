@@ -17,7 +17,12 @@ use chess::moves::{Move, MoveKind};
 use chess::piece::PieceKind;
 use chess::square::Square;
 
-/// One (position, outcome) sample extracted from a PGN game.
+/// A single training sample: a board position paired with its game outcome.
+///
+/// The outcome label is from White's perspective:
+/// `1.0` = White wins, `-1.0` = Black wins, `0.0` = draw.
+///
+/// This matches the output range of `HybridValueNet::forward`.
 pub type Sample = (Board, f32);
 
 // ─── public API ──────────────────────────────────────────────────────────────

@@ -1,19 +1,40 @@
-//! Board → `[17, 8, 8]` tensor encoding.
+//! Board-to-tensor encoding for the neural network.
 //!
-//! ## Plane layout
-//! | Planes | Content |
-//! |--------|---------|
-//! | 0–5    | White {pawn, knight, bishop, rook, queen, king} |
-//! | 6–11   | Black {pawn, knight, bishop, rook, queen, king} |
-//! | 12     | Side to move (all 1.0 if White, all 0.0 if Black) |
-//! | 13–16  | Castling rights: WK, WQ, BK, BQ (all 1.0 if right available) |
+//! ## 17-Channel Plane Layout
+//!
+//! A board position is encoded as a `[17, 8, 8]` float32 tensor.
+//! Each of the 17 channels is a binary 8×8 plane:
+//!
+//! | Channel | Content |
+//! |---------|---------|
+//! | 0–5     | White pieces: Pawn, Knight, Bishop, Rook, Queen, King |
+//! | 6–11    | Black pieces: Pawn, Knight, Bishop, Rook, Queen, King |
+//! | 12      | Side to move (all 1.0 = White to move, all 0.0 = Black) |
+//! | 13      | White kingside castling right |
+//! | 14      | White queenside castling right |
+//! | 15      | Black kingside castling right |
+//! | 16      | Black queenside castling right |
+//!
+//! ## Design rationale
+//!
+//! - **Piece planes (0–11):** Mirror the `Board::pieces` bitboard layout. Each
+//!   square is 1.0 if that piece occupies it, 0.0 otherwise.
+//! - **Side-to-move plane (12):** Gives the network an explicit global signal
+//!   about whose turn it is without requiring inference from piece positions.
+//! - **Castling planes (13–16):** Constant planes (all 1.0 or all 0.0) that
+//!   communicate castling availability as a simple spatial mask.
+//!
+//! This encoding follows the AlphaZero convention and is designed for 2-D
+//! convolutional layers that treat the 8×8 board as a spatial grid.
 
 use chess::board::{Board, BK, BQ, WK, WQ};
 use chess::piece::Color;
 use chess::square::Square;
 use tensor::Tensor;
 
-/// Encodes a `Board` into a `[17, 8, 8]` float tensor.
+/// Encodes a single board position into a `[17, 8, 8]` float32 tensor.
+///
+/// See the module-level documentation for the full channel layout.
 #[must_use]
 pub fn encode(board: &Board) -> Tensor {
     let mut data = vec![0.0f32; 17 * 8 * 8];
@@ -56,7 +77,10 @@ pub fn encode(board: &Board) -> Tensor {
     Tensor::from_vec(data, &[17, 8, 8])
 }
 
-/// Encodes a board with a leading batch dimension: `[1, 17, 8, 8]`.
+/// Encodes a board position as a batch tensor of shape `[1, 17, 8, 8]`.
+///
+/// Equivalent to wrapping `encode(board)` in a batch dimension.
+/// This is the format expected by `HybridValueNet::forward`.
 #[must_use]
 pub fn encode_batch(board: &Board) -> Tensor {
     encode(board).reshape(&[1, 17, 8, 8])
