@@ -257,6 +257,7 @@ fn castling_moves(board: &Board, color: Color, king_sq: Square) -> Vec<Move> {
 /// Used for correctness testing of move generation.
 #[must_use]
 pub fn perft(board: &Board, depth: u32) -> u64 {
+    let _span = tracing::debug_span!("perft", depth).entered();
     if depth == 0 {
         return 1;
     }

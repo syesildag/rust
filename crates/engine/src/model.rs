@@ -19,6 +19,7 @@ use crate::nn::ResNetBackbone;
 use chess::board::Board;
 use tensor::nn::{Linear, TransformerEncoder};
 use tensor::{ops, Tensor};
+use tracing::trace_span;
 
 const D_MODEL: usize = 256;
 const NUM_HEADS: usize = 8;
@@ -61,6 +62,7 @@ impl HybridValueNet {
     /// Returns a scalar tensor with value ∈ (-1, +1).
     #[must_use]
     pub fn forward(&self, board: &Board) -> Tensor {
+        let _span = trace_span!("HybridValueNet::forward").entered();
         // 1. Encode → [1, 17, 8, 8]
         let x = encode_batch(board);
 
