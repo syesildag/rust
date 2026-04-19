@@ -68,6 +68,8 @@ fn parse_game(pgn: &str) -> Vec<Sample> {
         if let Some(mv) = san_to_move(&board, token) {
             samples.push((board.clone(), outcome));
             board = board.make_move(mv);
+        } else {
+            tracing::warn!(token = token.as_str(), "skipped unparseable SAN token");
         }
     }
     samples
