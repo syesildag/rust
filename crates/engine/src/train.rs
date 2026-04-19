@@ -77,7 +77,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 .iter()
                 .map(|(board, label)| {
                     let pred = model.forward(board);
-                    let target = Tensor::from_vec(vec![*label], &[1]);
+                    let target = Tensor::from_vec(vec![*label], &[1, 1]);
                     let diff = ops::sub(&pred, &target);
                     let d_val = diff.data()[0];
                     ops::mul_scalar(&diff, d_val) // diff * diff ≈ diff²
