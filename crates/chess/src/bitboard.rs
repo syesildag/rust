@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::square::Square;
 
+/// A 64-bit integer representing a set of squares; bit `n` corresponds to square index `n` (a1=bit 0, h8=bit 63).
 pub type Bitboard = u64;
 
 /// Returns a bitboard with the given square's bit set.
@@ -17,15 +18,19 @@ pub const fn clear_bit(bb: Bitboard, sq: Square) -> Bitboard {
 }
 
 /// Returns the square of the least-significant set bit.
-/// Returns `Square::from_index(0)` for an empty bitboard — callers must check `bb != 0`.
+///
+/// # Panics
+/// Calling with `bb == 0` produces an out-of-range square index; callers must ensure `bb != 0`.
 #[must_use]
 pub fn lsb_square(bb: Bitboard) -> Square {
     #[allow(clippy::cast_possible_truncation)]
     Square::from_index(bb.trailing_zeros() as u8)
 }
 
-/// Clears the least-significant set bit and returns its square.
-/// Panics in debug if `bb` is zero.
+/// Clears the least-significant set bit of `*bb` in place and returns its square.
+///
+/// # Panics
+/// Calling with `*bb == 0` produces an out-of-range square index; callers must ensure `*bb != 0`.
 #[must_use]
 pub fn pop_lsb(bb: &mut Bitboard) -> Square {
     let sq = lsb_square(*bb);

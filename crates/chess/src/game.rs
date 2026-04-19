@@ -5,20 +5,29 @@ use crate::piece::{Color, PieceKind};
 /// Reason a game ended in a draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrawReason {
+    /// Neither side has made a pawn move or capture in the last 50 full moves (100 half-moves).
     FiftyMoveRule,
+    /// Neither side has enough material to deliver checkmate (kings only, or with one minor piece).
     InsufficientMaterial,
 }
 
 /// The current status of the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameStatus {
+    /// The side to move has at least one legal move.
     Ongoing,
+    /// The side to move has no legal moves and their king is in check.
     Checkmate,
+    /// The side to move has no legal moves and their king is not in check.
     Stalemate,
+    /// The game is drawn for the given reason.
     Draw(DrawReason),
 }
 
 /// Determines the current game status for the side to move.
+///
+/// Note: threefold repetition is **not** detected; callers that need it must
+/// track position history themselves.
 #[must_use]
 pub fn game_status(board: &Board) -> GameStatus {
     if board.halfmove_clock >= 100 {
