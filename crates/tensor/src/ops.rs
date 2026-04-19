@@ -312,6 +312,8 @@ impl GradFn for LinearBackward {
 /// - `bias`:   `[out_features]`
 /// - Output:   `[S, out_features]`
 ///
+/// Gradients flow to `input`, `weight`, and `bias` during the backward pass.
+///
 /// # Panics
 /// Panics if `input` or `weight` is not 2-D, or their feature dimensions don't match.
 #[must_use]
@@ -481,7 +483,7 @@ impl GradFn for TanhBackward {
 
 /// Element-wise hyperbolic tangent.
 ///
-/// Element-wise; output shape equals input shape.
+/// Output shape equals input shape.
 #[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {
     let src = x.data();

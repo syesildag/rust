@@ -19,9 +19,9 @@ pub struct TransformerBlock {
 }
 
 impl TransformerBlock {
-    /// Creates a transformer block.
+    /// Creates a new transformer block.
     ///
-    /// `d_ff` is the inner dimension of the feed-forward network (typically 4×`d_model`).
+    /// `d_ff` is the inner FFN dimension, typically 4× `d_model`.
     #[must_use]
     pub fn new(d_model: usize, num_heads: usize, d_ff: usize) -> Self {
         Self {
@@ -33,7 +33,9 @@ impl TransformerBlock {
         }
     }
 
-    /// Forward: `[S, d_model] → [S, d_model]`.
+    /// Applies self-attention + FFN with residual connections.
+    ///
+    /// Input/output shape: `[seq_len, d_model]`.
     #[must_use]
     pub fn forward(&self, x: &Tensor) -> Tensor {
         // Attention sub-layer with residual.
@@ -44,7 +46,7 @@ impl TransformerBlock {
         self.norm2.forward(&ops::add(&x, &ff_out))
     }
 
-    /// Returns all learnable parameters in this block.
+    /// Returns all learnable parameters from this block.
     #[must_use]
     pub fn parameters(&self) -> Vec<Tensor> {
         let mut p = self.attn.parameters();
@@ -62,7 +64,7 @@ pub struct TransformerEncoder {
 }
 
 impl TransformerEncoder {
-    /// Creates a stacked encoder with `num_layers` blocks.
+    /// Creates a stack of `num_layers` transformer blocks.
     #[must_use]
     pub fn new(num_layers: usize, d_model: usize, num_heads: usize, d_ff: usize) -> Self {
         let blocks = (0..num_layers)
@@ -71,7 +73,9 @@ impl TransformerEncoder {
         Self { blocks }
     }
 
-    /// Forward: `[S, d_model] → [S, d_model]`.
+    /// Applies all transformer blocks in sequence.
+    ///
+    /// Input/output shape: `[seq_len, d_model]`.
     #[must_use]
     pub fn forward(&self, x: &Tensor) -> Tensor {
         self.blocks
@@ -79,7 +83,7 @@ impl TransformerEncoder {
             .fold(x.clone(), |acc, block| block.forward(&acc))
     }
 
-    /// Returns all learnable parameters across all blocks.
+    /// Returns all learnable parameters from all blocks.
     #[must_use]
     pub fn parameters(&self) -> Vec<Tensor> {
         self.blocks

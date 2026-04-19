@@ -41,8 +41,19 @@ pub(crate) struct TensorData {
 
 /// A multi-dimensional array of `f32` values with optional autograd support.
 ///
-/// `Tensor` is a thin, cheaply-clonable handle (an `Arc`) around the actual
-/// data. Two clones refer to the *same* tensor — they share data and gradient.
+/// `Tensor` is a thin, cheaply-clonable handle backed by an [`Arc`] (reference
+/// count). Cloning a `Tensor` is cheap — both the original and the clone point
+/// to the *same* underlying data and gradient storage.
+///
+/// ## Autograd
+///
+/// Tensors created by calling `.with_grad()` are *leaf* tensors: they have no
+/// `grad_fn` and serve as the learnable parameters of a model. When you call
+/// [`Tensor::backward`] on a scalar loss, gradients flow back through the
+/// computation graph and are accumulated into every leaf tensor that was
+/// involved. Read the accumulated gradient with [`Tensor::grad`], and reset it
+/// before the next forward pass with [`Tensor::zero_grad`] (or via the
+/// optimizer's `zero_grad`).
 #[derive(Clone)]
 pub struct Tensor {
     pub(crate) inner: Arc<TensorData>,

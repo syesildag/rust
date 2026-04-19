@@ -7,7 +7,20 @@
 
 use crate::Tensor;
 
-/// Adam optimiser with β₁=0.9, β₂=0.999, ε=1e-8.
+/// Adam optimizer with β₁=0.9, β₂=0.999, ε=1e-8.
+///
+/// Maintains per-parameter first and second moment estimates that adapt the
+/// effective learning rate. Suitable for sparse gradients and non-stationary objectives.
+///
+/// # Typical usage
+///
+/// ```ignore
+/// let mut adam = Adam::new(model.parameters(), 1e-4);
+/// // each training iteration:
+/// adam.zero_grad();
+/// loss.backward();
+/// adam.step();
+/// ```
 pub struct Adam {
     params: Vec<Tensor>,
     lr: f32,
@@ -63,6 +76,9 @@ impl Adam {
     }
 
     /// Zeros all accumulated gradients.
+    ///
+    /// Must be called before each call to `backward()` to prevent gradients
+    /// from accumulating across iterations.
     pub fn zero_grad(&self) {
         for p in &self.params {
             p.zero_grad();
