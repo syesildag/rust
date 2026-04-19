@@ -6,6 +6,7 @@
 
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
+use tracing::{debug, info_span};
 use chess::board::Board;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
@@ -14,13 +15,13 @@ use chess::piece::Color;
 /// Plays `num_games` greedy games and collects all (position, outcome) pairs.
 #[must_use]
 pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
+    let _span = info_span!("selfplay", total_games = num_games).entered();
     let mut dataset = ChessDataset::new();
     for game_idx in 0..num_games {
-        if (game_idx + 1) % 10 == 0 {
-            println!("Self-play: {}/{} games", game_idx + 1, num_games);
-        }
         let samples = play_game(model);
+        let positions = samples.len();
         dataset.extend(samples);
+        debug!(game = game_idx + 1, total = num_games, positions, "game complete");
     }
     dataset
 }
