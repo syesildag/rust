@@ -16,7 +16,7 @@
 //! A FEN string has exactly 6 space-separated fields, so the optional outcome
 //! is always the 7th token on the line.
 //!
-//! Lines that fail FEN parsing are silently skipped.
+//! Lines that fail FEN parsing emit a `tracing::warn!` and are skipped.
 
 use crate::pgn::Sample;
 use chess::fen::from_fen;
