@@ -208,6 +208,24 @@ impl Tensor {
         }
     }
 
+    /// Adds `delta` (shape `[rows, ncols]`) into the column stripe `[start_col, start_col+ncols)`
+    /// of this 2-D tensor's gradient, without allocating a full sparse buffer.
+    pub(crate) fn accumulate_grad_cols(
+        &self,
+        delta: &[f32],
+        rows: usize,
+        start_col: usize,
+        ncols: usize,
+        total_cols: usize,
+    ) {
+        let mut g = self.inner.grad.lock().expect("grad Mutex poisoned");
+        for i in 0..rows {
+            for j in 0..ncols {
+                g[i * total_cols + start_col + j] += delta[i * ncols + j];
+            }
+        }
+    }
+
     // ── Parameter update (used by optimizer) ─────────────────────────────
 
     /// Subtracts `delta` element-wise from the data in-place (optimizer step).

@@ -872,6 +872,51 @@ pub fn cat_cols(tensors: &[&Tensor]) -> Tensor {
     }
 }
 
+// ── slice_cols ────────────────────────────────────────────────────────────────
+
+struct SliceColsBackward {
+    input: Tensor,
+    start: usize,
+    rows: usize,
+    ncols: usize,
+    total_cols: usize,
+}
+impl GradFn for SliceColsBackward {
+    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            self.input.accumulate_grad_cols(g, self.rows, self.start, self.ncols, self.total_cols);
+        }
+    }
+}
+
+/// Slices columns `[start, end)` from a 2-D tensor: `[M, N] → [M, end-start]`.
+///
+/// # Panics
+/// Panics if the tensor is not 2-D or the range is out of bounds.
+#[must_use]
+pub fn slice_cols(x: &Tensor, start: usize, end: usize) -> Tensor {
+    let shape = x.shape();
+    assert_eq!(shape.len(), 2, "slice_cols: expected 2-D tensor, got {shape:?}");
+    let (rows, total_cols) = (shape[0], shape[1]);
+    assert!(end <= total_cols && start < end, "slice_cols: invalid range {start}..{end} for {total_cols} cols");
+    let ncols = end - start;
+    let src = x.data();
+    let mut out = Vec::with_capacity(rows * ncols);
+    for i in 0..rows {
+        out.extend_from_slice(&src[i * total_cols + start..i * total_cols + end]);
+    }
+    if x.requires_grad() {
+        Tensor::from_op(
+            out,
+            &[rows, ncols],
+            Arc::new(SliceColsBackward { input: x.clone(), start, rows, ncols, total_cols }),
+        )
+    } else {
+        Tensor::from_vec(out, &[rows, ncols])
+    }
+}
+
 // ── select_row ────────────────────────────────────────────────────────────────
 
 struct SelectRowBackward {
