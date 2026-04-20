@@ -129,12 +129,22 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             let targets = Tensor::from_vec(outcomes, &[b, 1]);
             let loss = ops::mse_loss_tensor(&preds, &targets);
 
+            let loss_val = loss.data()[0];
+            if !loss_val.is_finite() {
+                warn!(
+                    loss = loss_val,
+                    "non-finite loss — skipping optimizer step for this batch"
+                );
+                continue;
+            }
+
             loss.backward();
+            adam.clip_grad_norm(1.0);
             adam.step();
 
             info!(
                 percentage = format!("{:.1}%", n_samples as f64 / dataset.len() as f64 * 100.0),
-                loss = loss.data()[0]
+                loss = loss_val
             );
 
             for (board, _, game_id) in &filtered {

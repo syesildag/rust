@@ -76,6 +76,31 @@ impl Adam {
         }
     }
 
+    /// Clips the global gradient L2 norm across all parameters.
+    ///
+    /// Computes the combined L2 norm of every parameter's gradient vector.
+    /// If it exceeds `max_norm`, all gradients are scaled down uniformly so
+    /// the global norm equals `max_norm`. Has no effect when the norm is
+    /// already within bounds or is not finite (e.g. NaN/Inf).
+    ///
+    /// Call this after `loss.backward()` and before `step()`.
+    pub fn clip_grad_norm(&self, max_norm: f32) {
+        let total_sq: f32 = self
+            .params
+            .iter()
+            .flat_map(|p| p.grad().into_iter().map(|g| g * g))
+            .sum();
+        let norm = total_sq.sqrt();
+        if norm.is_finite() && norm > max_norm {
+            let scale = max_norm / norm;
+            for p in &self.params {
+                let clipped: Vec<f32> = p.grad().iter().map(|g| g * scale).collect();
+                p.zero_grad();
+                p.accumulate_grad(&clipped);
+            }
+        }
+    }
+
     /// Zeros all accumulated gradients.
     ///
     /// Must be called before each call to `backward()` to prevent gradients
