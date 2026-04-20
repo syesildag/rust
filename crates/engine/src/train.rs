@@ -111,10 +111,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     }
 
     macro_rules! shutdown_if_requested {
-        () => {
+        ($model:expr) => {
             if shutdown.load(Ordering::SeqCst) {
                 info!("shutdown signal — saving and exiting");
-                save_all!(model);
+                save_all!($model);
             }
         };
     }
@@ -136,7 +136,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             n_samples += batch.len();
 
             if filtered.is_empty() {
-                shutdown_if_requested!();
+                shutdown_if_requested!(model);
                 continue;
             }
 
@@ -163,7 +163,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
             }
 
-            shutdown_if_requested!();
+            shutdown_if_requested!(model);
         }
 
         info!("epoch {epoch} complete");
