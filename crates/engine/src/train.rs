@@ -80,6 +80,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         "starting training"
     );
 
+    macro_rules! shutdown_if_requested {
+        () => {
+            if shutdown.load(Ordering::SeqCst) {
+                info!("shutdown signal — saving and exiting");
+                model.save_to(&cfg.output)?;
+                pos_db.save_to(&db_path)?;
+                return Ok(model);
+            }
+        };
+    }
+
     for epoch in 1..=cfg.epochs {
         let epoch_span = info_span!("epoch", n = epoch, total = cfg.epochs);
         let _epoch_guard = epoch_span.enter();
@@ -98,12 +109,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             n_skipped += batch.len() - filtered.len();
 
             if filtered.is_empty() {
-                if shutdown.load(Ordering::SeqCst) {
-                    info!("shutdown signal — saving and exiting");
-                    model.save_to(&cfg.output)?;
-                    pos_db.save_to(&db_path)?;
-                    return Ok(model);
-                }
+                shutdown_if_requested!();
                 continue;
             }
 
@@ -128,12 +134,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
             }
 
-            if shutdown.load(Ordering::SeqCst) {
-                info!("shutdown signal — saving and exiting");
-                model.save_to(&cfg.output)?;
-                pos_db.save_to(&db_path)?;
-                return Ok(model);
-            }
+            shutdown_if_requested!();
         }
 
         let avg = if n_batches > 0 {
