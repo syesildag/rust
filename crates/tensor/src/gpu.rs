@@ -79,21 +79,14 @@ impl GpuContext {
 
         // Compile all shaders and cache the resulting pipelines.
         let four = four_binding_layout();
-        let matmul = compile_pipeline(
-            &device,
-            include_str!("../shaders/matmul.wgsl"),
-            &four,
-        );
+        let matmul = compile_pipeline(&device, include_str!("../shaders/matmul.wgsl"), &four);
         let matmul_batched = compile_pipeline(
             &device,
             include_str!("../shaders/matmul_batched.wgsl"),
             &four,
         );
-        let elementwise = compile_pipeline(
-            &device,
-            include_str!("../shaders/elementwise.wgsl"),
-            &four,
-        );
+        let elementwise =
+            compile_pipeline(&device, include_str!("../shaders/elementwise.wgsl"), &four);
         let softmax = compile_pipeline(
             &device,
             include_str!("../shaders/softmax.wgsl"),
@@ -137,21 +130,38 @@ impl GpuContext {
             k: u32,
             _pad: u32,
         }
-        let dims = Dims { m: m as u32, n: n as u32, k: k as u32, _pad: 0 };
+        let dims = Dims {
+            m: m as u32,
+            n: n as u32,
+            k: k as u32,
+            _pad: 0,
+        };
         let [a_buf, b_buf] = self.upload_ro_pair(a, b);
         let c_buf = self.alloc_output(m * n);
         let staging = self.alloc_staging(m * n);
         let dims_buf = self.upload_uniform(&[dims]);
 
-        let bg = self.bind_group(&self.matmul.bgl, &[
-            bind(0, a_buf.as_entire_binding()),
-            bind(1, b_buf.as_entire_binding()),
-            bind(2, c_buf.as_entire_binding()),
-            bind(3, dims_buf.as_entire_binding()),
-        ]);
+        let bg = self.bind_group(
+            &self.matmul.bgl,
+            &[
+                bind(0, a_buf.as_entire_binding()),
+                bind(1, b_buf.as_entire_binding()),
+                bind(2, c_buf.as_entire_binding()),
+                bind(3, dims_buf.as_entire_binding()),
+            ],
+        );
         let wgx = (m as u32).div_ceil(16);
         let wgy = (n as u32).div_ceil(16);
-        self.dispatch_and_readback(&self.matmul.pipeline, &bg, wgx, wgy, 1, &c_buf, &staging, m * n)
+        self.dispatch_and_readback(
+            &self.matmul.pipeline,
+            &bg,
+            wgx,
+            wgy,
+            1,
+            &c_buf,
+            &staging,
+            m * n,
+        )
     }
 
     // ── matmul_batched ────────────────────────────────────────────────────────
@@ -177,18 +187,26 @@ impl GpuContext {
             n: u32,
             k: u32,
         }
-        let dims = Dims { batch: batch as u32, m: m as u32, n: n as u32, k: k as u32 };
+        let dims = Dims {
+            batch: batch as u32,
+            m: m as u32,
+            n: n as u32,
+            k: k as u32,
+        };
         let [a_buf, b_buf] = self.upload_ro_pair(a, b);
         let c_buf = self.alloc_output(batch * m * n);
         let staging = self.alloc_staging(batch * m * n);
         let dims_buf = self.upload_uniform(&[dims]);
 
-        let bg = self.bind_group(&self.matmul_batched.bgl, &[
-            bind(0, a_buf.as_entire_binding()),
-            bind(1, b_buf.as_entire_binding()),
-            bind(2, c_buf.as_entire_binding()),
-            bind(3, dims_buf.as_entire_binding()),
-        ]);
+        let bg = self.bind_group(
+            &self.matmul_batched.bgl,
+            &[
+                bind(0, a_buf.as_entire_binding()),
+                bind(1, b_buf.as_entire_binding()),
+                bind(2, c_buf.as_entire_binding()),
+                bind(3, dims_buf.as_entire_binding()),
+            ],
+        );
         let wgx = (m as u32).div_ceil(16);
         let wgy = (n as u32).div_ceil(16);
         self.dispatch_and_readback(
@@ -219,7 +237,12 @@ impl GpuContext {
             _pad: u32,
         }
         let n = a.len();
-        let ctrl = Ctrl { op_code, scalar: 0.0, len: n as u32, _pad: 0 };
+        let ctrl = Ctrl {
+            op_code,
+            scalar: 0.0,
+            len: n as u32,
+            _pad: 0,
+        };
         // WGPU requires a non-empty buffer; use a 1-element dummy for unused B.
         let b_eff: &[f32] = if b.is_empty() { &[0.0f32] } else { b };
 
@@ -228,14 +251,26 @@ impl GpuContext {
         let staging = self.alloc_staging(n);
         let ctrl_buf = self.upload_uniform(&[ctrl]);
 
-        let bg = self.bind_group(&self.elementwise.bgl, &[
-            bind(0, a_buf.as_entire_binding()),
-            bind(1, b_buf.as_entire_binding()),
-            bind(2, c_buf.as_entire_binding()),
-            bind(3, ctrl_buf.as_entire_binding()),
-        ]);
+        let bg = self.bind_group(
+            &self.elementwise.bgl,
+            &[
+                bind(0, a_buf.as_entire_binding()),
+                bind(1, b_buf.as_entire_binding()),
+                bind(2, c_buf.as_entire_binding()),
+                bind(3, ctrl_buf.as_entire_binding()),
+            ],
+        );
         let wgx = (n as u32).div_ceil(256);
-        self.dispatch_and_readback(&self.elementwise.pipeline, &bg, wgx, 1, 1, &c_buf, &staging, n)
+        self.dispatch_and_readback(
+            &self.elementwise.pipeline,
+            &bg,
+            wgx,
+            1,
+            1,
+            &c_buf,
+            &staging,
+            n,
+        )
     }
 
     // ── softmax ───────────────────────────────────────────────────────────────
@@ -249,17 +284,23 @@ impl GpuContext {
             rows: u32,
             cols: u32,
         }
-        let dims = Dims { rows: rows as u32, cols: cols as u32 };
+        let dims = Dims {
+            rows: rows as u32,
+            cols: cols as u32,
+        };
         let in_buf = self.upload_ro(input);
         let out_buf = self.alloc_output(rows * cols);
         let staging = self.alloc_staging(rows * cols);
         let dims_buf = self.upload_uniform(&[dims]);
 
-        let bg = self.bind_group(&self.softmax.bgl, &[
-            bind(0, in_buf.as_entire_binding()),
-            bind(1, out_buf.as_entire_binding()),
-            bind(2, dims_buf.as_entire_binding()),
-        ]);
+        let bg = self.bind_group(
+            &self.softmax.bgl,
+            &[
+                bind(0, in_buf.as_entire_binding()),
+                bind(1, out_buf.as_entire_binding()),
+                bind(2, dims_buf.as_entire_binding()),
+            ],
+        );
         // One workgroup per row.
         self.dispatch_and_readback(
             &self.softmax.pipeline,
@@ -294,7 +335,12 @@ impl GpuContext {
             eps: f32,
             _pad: u32,
         }
-        let params = Params { rows: rows as u32, d: d as u32, eps, _pad: 0 };
+        let params = Params {
+            rows: rows as u32,
+            d: d as u32,
+            eps,
+            _pad: 0,
+        };
         let in_buf = self.upload_ro(input);
         let gamma_buf = self.upload_ro(gamma);
         let beta_buf = self.upload_ro(beta);
@@ -302,13 +348,16 @@ impl GpuContext {
         let staging = self.alloc_staging(rows * d);
         let params_buf = self.upload_uniform(&[params]);
 
-        let bg = self.bind_group(&self.layer_norm.bgl, &[
-            bind(0, in_buf.as_entire_binding()),
-            bind(1, gamma_buf.as_entire_binding()),
-            bind(2, beta_buf.as_entire_binding()),
-            bind(3, out_buf.as_entire_binding()),
-            bind(4, params_buf.as_entire_binding()),
-        ]);
+        let bg = self.bind_group(
+            &self.layer_norm.bgl,
+            &[
+                bind(0, in_buf.as_entire_binding()),
+                bind(1, gamma_buf.as_entire_binding()),
+                bind(2, beta_buf.as_entire_binding()),
+                bind(3, out_buf.as_entire_binding()),
+                bind(4, params_buf.as_entire_binding()),
+            ],
+        );
         // One workgroup per row.
         self.dispatch_and_readback(
             &self.layer_norm.pipeline,
@@ -326,12 +375,17 @@ impl GpuContext {
 
     fn upload_ro(&self, data: &[f32]) -> wgpu::Buffer {
         // WGPU requires at least 4 bytes; use a zero byte if data is empty.
-        let contents: &[u8] = if data.is_empty() { &[0u8; 4] } else { cast_slice(data) };
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents,
-            usage: wgpu::BufferUsages::STORAGE,
-        })
+        let contents: &[u8] = if data.is_empty() {
+            &[0u8; 4]
+        } else {
+            cast_slice(data)
+        };
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
     }
 
     fn upload_ro_pair(&self, a: &[f32], b: &[f32]) -> [wgpu::Buffer; 2] {
@@ -339,11 +393,12 @@ impl GpuContext {
     }
 
     fn upload_uniform<T: bytemuck::Pod>(&self, data: &[T]) -> wgpu::Buffer {
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: cast_slice(data),
-            usage: wgpu::BufferUsages::UNIFORM,
-        })
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: cast_slice(data),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
     }
 
     fn alloc_output(&self, n: usize) -> wgpu::Buffer {
@@ -388,11 +443,11 @@ impl GpuContext {
         n: usize,
     ) -> Vec<f32> {
         let byte_size = (n * std::mem::size_of::<f32>()) as u64;
-        let mut encoder =
-            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
-            let mut pass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bg, &[]);
             pass.dispatch_workgroups(wgx, wgy, wgz);
@@ -444,7 +499,12 @@ fn compile_pipeline(
 // ── BGL entry helpers ─────────────────────────────────────────────────────────
 
 fn four_binding_layout() -> [wgpu::BindGroupLayoutEntry; 4] {
-    [storage_ro_entry(0), storage_ro_entry(1), storage_rw_entry(2), uniform_entry(3)]
+    [
+        storage_ro_entry(0),
+        storage_ro_entry(1),
+        storage_rw_entry(2),
+        uniform_entry(3),
+    ]
 }
 
 fn storage_ro_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {

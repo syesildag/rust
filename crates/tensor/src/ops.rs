@@ -19,7 +19,10 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use crate::{gpu, tensor_impl::{GradFn, Tensor}};
+use crate::{
+    gpu,
+    tensor_impl::{GradFn, Tensor},
+};
 
 // ── Internal CPU math helpers ──────────────────────────────────────��──────────
 
@@ -114,8 +117,11 @@ pub fn add(a: &Tensor, b: &Tensor) -> Tensor {
     let ad = a.data();
     let bd = b.data();
     let data: Vec<f32> = if ad.len() > 4_096 {
-        if let Some(g) = gpu::global_gpu() { g.elementwise(&ad, &bd, 2) }
-        else { ad.iter().zip(bd.iter()).map(|(x, y)| x + y).collect() }
+        if let Some(g) = gpu::global_gpu() {
+            g.elementwise(&ad, &bd, 2)
+        } else {
+            ad.iter().zip(bd.iter()).map(|(x, y)| x + y).collect()
+        }
     } else {
         ad.iter().zip(bd.iter()).map(|(x, y)| x + y).collect()
     };
@@ -164,8 +170,11 @@ pub fn sub(a: &Tensor, b: &Tensor) -> Tensor {
     let ad = a.data();
     let bd = b.data();
     let data: Vec<f32> = if ad.len() > 4_096 {
-        if let Some(g) = gpu::global_gpu() { g.elementwise(&ad, &bd, 3) }
-        else { ad.iter().zip(bd.iter()).map(|(x, y)| x - y).collect() }
+        if let Some(g) = gpu::global_gpu() {
+            g.elementwise(&ad, &bd, 3)
+        } else {
+            ad.iter().zip(bd.iter()).map(|(x, y)| x - y).collect()
+        }
     } else {
         ad.iter().zip(bd.iter()).map(|(x, y)| x - y).collect()
     };
@@ -405,8 +414,11 @@ pub fn relu(x: &Tensor) -> Tensor {
     let src = x.data();
     let mask: Vec<bool> = src.iter().map(|&v| v > 0.0).collect();
     let data: Vec<f32> = if src.len() > 4_096 {
-        if let Some(g) = gpu::global_gpu() { g.elementwise(&src, &[], 0) }
-        else { src.iter().map(|&v| v.max(0.0)).collect() }
+        if let Some(g) = gpu::global_gpu() {
+            g.elementwise(&src, &[], 0)
+        } else {
+            src.iter().map(|&v| v.max(0.0)).collect()
+        }
     } else {
         src.iter().map(|&v| v.max(0.0)).collect()
     };
@@ -474,8 +486,11 @@ impl GradFn for GeluBackward {
 pub fn gelu(x: &Tensor) -> Tensor {
     let src = x.data();
     let data: Vec<f32> = if src.len() > 4_096 {
-        if let Some(g) = gpu::global_gpu() { g.elementwise(&src, &[], 1) }
-        else { src.iter().map(|&v| gelu_fwd(v)).collect() }
+        if let Some(g) = gpu::global_gpu() {
+            g.elementwise(&src, &[], 1)
+        } else {
+            src.iter().map(|&v| gelu_fwd(v)).collect()
+        }
     } else {
         src.iter().map(|&v| gelu_fwd(v)).collect()
     };
@@ -882,10 +897,13 @@ struct SliceColsBackward {
     total_cols: usize,
 }
 impl GradFn for SliceColsBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
     fn backward(&self, g: &[f32]) {
         if self.input.requires_grad() {
-            self.input.accumulate_grad_cols(g, self.rows, self.start, self.ncols, self.total_cols);
+            self.input
+                .accumulate_grad_cols(g, self.rows, self.start, self.ncols, self.total_cols);
         }
     }
 }
@@ -897,9 +915,16 @@ impl GradFn for SliceColsBackward {
 #[must_use]
 pub fn slice_cols(x: &Tensor, start: usize, end: usize) -> Tensor {
     let shape = x.shape();
-    assert_eq!(shape.len(), 2, "slice_cols: expected 2-D tensor, got {shape:?}");
+    assert_eq!(
+        shape.len(),
+        2,
+        "slice_cols: expected 2-D tensor, got {shape:?}"
+    );
     let (rows, total_cols) = (shape[0], shape[1]);
-    assert!(end <= total_cols && start < end, "slice_cols: invalid range {start}..{end} for {total_cols} cols");
+    assert!(
+        end <= total_cols && start < end,
+        "slice_cols: invalid range {start}..{end} for {total_cols} cols"
+    );
     let ncols = end - start;
     let src = x.data();
     let mut out = Vec::with_capacity(rows * ncols);
@@ -910,7 +935,13 @@ pub fn slice_cols(x: &Tensor, start: usize, end: usize) -> Tensor {
         Tensor::from_op(
             out,
             &[rows, ncols],
-            Arc::new(SliceColsBackward { input: x.clone(), start, rows, ncols, total_cols }),
+            Arc::new(SliceColsBackward {
+                input: x.clone(),
+                start,
+                rows,
+                ncols,
+                total_cols,
+            }),
         )
     } else {
         Tensor::from_vec(out, &[rows, ncols])
@@ -986,33 +1017,36 @@ fn im2col(
     let item = col_rows * col_cols;
     let mut cols = vec![0.0f32; n * item];
     // Parallel over batch items — each writes to a non-overlapping slice.
-    cols.par_chunks_mut(item).enumerate().for_each(|(ni, chunk)| {
-        let h_i = h as isize;
-        let w_i = w as isize;
-        let pad_i = pad as isize;
-        for ci in 0..c_in {
-            for ki in 0..kh {
-                for kj in 0..kw {
-                    let col_col = ci * kh * kw + ki * kw + kj;
-                    for hi in 0..h_out {
-                        let src_h = hi as isize + ki as isize - pad_i;
-                        for wi in 0..w_out {
-                            let src_w = wi as isize + kj as isize - pad_i;
-                            let val = if src_h >= 0 && src_h < h_i && src_w >= 0 && src_w < w_i {
-                                input[ni * c_in * h * w
-                                    + ci * h * w
-                                    + src_h as usize * w
-                                    + src_w as usize]
-                            } else {
-                                0.0
-                            };
-                            chunk[(hi * w_out + wi) * col_cols + col_col] = val;
+    cols.par_chunks_mut(item)
+        .enumerate()
+        .for_each(|(ni, chunk)| {
+            let h_i = h as isize;
+            let w_i = w as isize;
+            let pad_i = pad as isize;
+            for ci in 0..c_in {
+                for ki in 0..kh {
+                    for kj in 0..kw {
+                        let col_col = ci * kh * kw + ki * kw + kj;
+                        for hi in 0..h_out {
+                            let src_h = hi as isize + ki as isize - pad_i;
+                            for wi in 0..w_out {
+                                let src_w = wi as isize + kj as isize - pad_i;
+                                let val = if src_h >= 0 && src_h < h_i && src_w >= 0 && src_w < w_i
+                                {
+                                    input[ni * c_in * h * w
+                                        + ci * h * w
+                                        + src_h as usize * w
+                                        + src_w as usize]
+                                } else {
+                                    0.0
+                                };
+                                chunk[(hi * w_out + wi) * col_cols + col_col] = val;
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
     (cols, h_out, w_out)
 }
 
@@ -1036,31 +1070,38 @@ fn col2im(
     let item = c_in * h * w;
     let mut d_input = vec![0.0f32; n * item];
     // Parallel over batch items — each writes to a non-overlapping slice.
-    d_input.par_chunks_mut(item).enumerate().for_each(|(ni, chunk)| {
-        let pad_i = pad as isize;
-        let h_out_i = h_out as isize;
-        let w_out_i = w_out as isize;
-        let cols_n = &cols[ni * h_out * w_out * col_cols..];
-        for ci in 0..c_in {
-            for src_h in 0..h {
-                for src_w in 0..w {
-                    let mut acc = 0.0f32;
-                    for ki in 0..kh {
-                        let hi = src_h as isize + pad_i - ki as isize;
-                        if hi < 0 || hi >= h_out_i { continue; }
-                        for kj in 0..kw {
-                            let wi = src_w as isize + pad_i - kj as isize;
-                            if wi < 0 || wi >= w_out_i { continue; }
-                            let col_row = hi as usize * w_out + wi as usize;
-                            let col_col = ci * kh * kw + ki * kw + kj;
-                            acc += cols_n[col_row * col_cols + col_col];
+    d_input
+        .par_chunks_mut(item)
+        .enumerate()
+        .for_each(|(ni, chunk)| {
+            let pad_i = pad as isize;
+            let h_out_i = h_out as isize;
+            let w_out_i = w_out as isize;
+            let cols_n = &cols[ni * h_out * w_out * col_cols..];
+            for ci in 0..c_in {
+                for src_h in 0..h {
+                    for src_w in 0..w {
+                        let mut acc = 0.0f32;
+                        for ki in 0..kh {
+                            let hi = src_h as isize + pad_i - ki as isize;
+                            if hi < 0 || hi >= h_out_i {
+                                continue;
+                            }
+                            for kj in 0..kw {
+                                let wi = src_w as isize + pad_i - kj as isize;
+                                if wi < 0 || wi >= w_out_i {
+                                    continue;
+                                }
+                                let col_row = hi as usize * w_out + wi as usize;
+                                let col_col = ci * kh * kw + ki * kw + kj;
+                                acc += cols_n[col_row * col_cols + col_col];
+                            }
                         }
+                        chunk[ci * h * w + src_h * w + src_w] = acc;
                     }
-                    chunk[ci * h * w + src_h * w + src_w] = acc;
                 }
             }
-        }
-    });
+        });
     d_input
 }
 
@@ -1092,16 +1133,19 @@ impl GradFn for Conv2dBackward {
         // Reorder g from [N, C_out, H_out, W_out] to [N, H_out*W_out, C_out]
         let mut g_mat = vec![0.0f32; n * col_rows * c_out];
         // Parallel over batch items — each writes to a non-overlapping slice.
-        g_mat.par_chunks_mut(col_rows * c_out).enumerate().for_each(|(ni, chunk)| {
-            for co in 0..c_out {
-                for hi in 0..h_out {
-                    for wi in 0..w_out {
-                        chunk[(hi * w_out + wi) * c_out + co] =
-                            g[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
+        g_mat
+            .par_chunks_mut(col_rows * c_out)
+            .enumerate()
+            .for_each(|(ni, chunk)| {
+                for co in 0..c_out {
+                    for hi in 0..h_out {
+                        for wi in 0..w_out {
+                            chunk[(hi * w_out + wi) * c_out + co] = g
+                                [ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
+                        }
                     }
                 }
-            }
-        });
+            });
         // weight: [C_out, C_in*kH*kW]
         let w_data = self.weight.data();
         if self.weight.requires_grad() {
@@ -1122,8 +1166,8 @@ impl GradFn for Conv2dBackward {
                 for ni in 0..n {
                     for hi in 0..h_out {
                         for wi in 0..w_out {
-                            *db_co +=
-                                g[ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
+                            *db_co += g
+                                [ni * c_out * h_out * w_out + co * h_out * w_out + hi * w_out + wi];
                         }
                     }
                 }
@@ -1133,7 +1177,9 @@ impl GradFn for Conv2dBackward {
         if self.input.requires_grad() {
             // d_cols = g_mat @ weight  ([N*HW, C_out] @ [C_out, col_cols] = [N*HW, col_cols])
             let d_cols = matmul_2d(&g_mat, &w_data, n * col_rows, c_out, col_cols);
-            let d_input = col2im(&d_cols, n, self.c_in, self.h, self.w, self.kh, self.kw, self.pad, h_out, w_out);
+            let d_input = col2im(
+                &d_cols, n, self.c_in, self.h, self.w, self.kh, self.kw, self.pad, h_out, w_out,
+            );
             self.input.accumulate_grad(&d_input);
         }
     }
@@ -1172,17 +1218,19 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
     // Reorder [N, H_out*W_out, C_out] → [N, C_out, H_out, W_out] and add bias.
     // Parallel over batch items — each writes to a non-overlapping slice.
     let mut data = vec![0.0f32; n * c_out * h_out * w_out];
-    data.par_chunks_mut(c_out * h_out * w_out).enumerate().for_each(|(ni, chunk)| {
-        for co in 0..c_out {
-            for hi in 0..h_out {
-                for wi in 0..w_out {
-                    chunk[co * h_out * w_out + hi * w_out + wi] =
-                        out_mat[ni * col_rows * c_out + (hi * w_out + wi) * c_out + co]
+    data.par_chunks_mut(c_out * h_out * w_out)
+        .enumerate()
+        .for_each(|(ni, chunk)| {
+            for co in 0..c_out {
+                for hi in 0..h_out {
+                    for wi in 0..w_out {
+                        chunk[co * h_out * w_out + hi * w_out + wi] = out_mat
+                            [ni * col_rows * c_out + (hi * w_out + wi) * c_out + co]
                             + bias_data[co];
+                    }
                 }
             }
-        }
-    });
+        });
     let needs_grad = input.requires_grad() || weight.requires_grad() || bias.requires_grad();
     if needs_grad {
         Tensor::from_op(
@@ -1440,7 +1488,9 @@ struct StackBackward {
     item_size: usize,
 }
 impl GradFn for StackBackward {
-    fn inputs(&self) -> Vec<Tensor> { self.inputs.clone() }
+    fn inputs(&self) -> Vec<Tensor> {
+        self.inputs.clone()
+    }
     fn backward(&self, g: &[f32]) {
         for (i, t) in self.inputs.iter().enumerate() {
             if t.requires_grad() {
@@ -1472,7 +1522,11 @@ pub fn stack(tensors: &[&Tensor]) -> Tensor {
     let needs_grad = tensors.iter().any(|t| t.requires_grad());
     let inputs: Vec<Tensor> = tensors.iter().map(|t| (*t).clone()).collect();
     if needs_grad {
-        Tensor::from_op(data, &out_shape, Arc::new(StackBackward { inputs, item_size }))
+        Tensor::from_op(
+            data,
+            &out_shape,
+            Arc::new(StackBackward { inputs, item_size }),
+        )
     } else {
         Tensor::from_vec(data, &out_shape)
     }
@@ -1487,7 +1541,9 @@ struct TransposeLastTwoBackward {
     n: usize,
 }
 impl GradFn for TransposeLastTwoBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
     fn backward(&self, g: &[f32]) {
         if self.input.requires_grad() {
             let (b, m, n) = (self.b, self.m, self.n);
@@ -1512,7 +1568,11 @@ impl GradFn for TransposeLastTwoBackward {
 #[must_use]
 pub fn transpose_last_two(x: &Tensor) -> Tensor {
     let s = x.shape();
-    assert_eq!(s.len(), 3, "transpose_last_two: expected 3-D tensor, got {s:?}");
+    assert_eq!(
+        s.len(),
+        3,
+        "transpose_last_two: expected 3-D tensor, got {s:?}"
+    );
     let (b, m, n) = (s[0], s[1], s[2]);
     let src = x.data();
     let mut out = vec![0.0f32; b * m * n];
@@ -1527,7 +1587,12 @@ pub fn transpose_last_two(x: &Tensor) -> Tensor {
         Tensor::from_op(
             out,
             &[b, n, m],
-            Arc::new(TransposeLastTwoBackward { input: x.clone(), b, m, n }),
+            Arc::new(TransposeLastTwoBackward {
+                input: x.clone(),
+                b,
+                m,
+                n,
+            }),
         )
     } else {
         Tensor::from_vec(out, &[b, n, m])
@@ -1569,8 +1634,12 @@ impl GradFn for MatMulBatchedBackward {
                 db[bi * k * n..(bi + 1) * k * n].copy_from_slice(&d);
             }
         }
-        if self.a.requires_grad() { self.a.accumulate_grad(&da); }
-        if self.b.requires_grad() { self.b.accumulate_grad(&db); }
+        if self.a.requires_grad() {
+            self.a.accumulate_grad(&da);
+        }
+        if self.b.requires_grad() {
+            self.b.accumulate_grad(&db);
+        }
     }
 }
 
@@ -1584,8 +1653,14 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let sb = b.shape();
     assert_eq!(sa.len(), 3, "matmul_batched: a must be 3-D, got {sa:?}");
     assert_eq!(sb.len(), 3, "matmul_batched: b must be 3-D, got {sb:?}");
-    assert_eq!(sa[0], sb[0], "matmul_batched: batch mismatch {sa:?} vs {sb:?}");
-    assert_eq!(sa[2], sb[1], "matmul_batched: inner dim mismatch {sa:?} vs {sb:?}");
+    assert_eq!(
+        sa[0], sb[0],
+        "matmul_batched: batch mismatch {sa:?} vs {sb:?}"
+    );
+    assert_eq!(
+        sa[2], sb[1],
+        "matmul_batched: inner dim mismatch {sa:?} vs {sb:?}"
+    );
     let (batch, m, k, n) = (sa[0], sa[1], sa[2], sb[2]);
     let a_data = a.data();
     let b_data = b.data();
@@ -1605,7 +1680,14 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
         Tensor::from_op(
             data,
             &[batch, m, n],
-            Arc::new(MatMulBatchedBackward { a: a.clone(), b: b.clone(), batch, m, k, n }),
+            Arc::new(MatMulBatchedBackward {
+                a: a.clone(),
+                b: b.clone(),
+                batch,
+                m,
+                k,
+                n,
+            }),
         )
     } else {
         Tensor::from_vec(data, &[batch, m, n])
@@ -1621,7 +1703,9 @@ struct SliceBatchBackward {
     batch: usize,
 }
 impl GradFn for SliceBatchBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
     fn backward(&self, g: &[f32]) {
         if self.input.requires_grad() {
             let mut d = vec![0.0f32; self.batch * self.item_size];
@@ -1640,9 +1724,15 @@ impl GradFn for SliceBatchBackward {
 #[must_use]
 pub fn slice_batch(x: &Tensor, idx: usize) -> Tensor {
     let s = x.shape();
-    assert!(!s.is_empty(), "slice_batch: tensor must have at least 1 dimension");
+    assert!(
+        !s.is_empty(),
+        "slice_batch: tensor must have at least 1 dimension"
+    );
     let batch = s[0];
-    assert!(idx < batch, "slice_batch: idx {idx} out of bounds for batch {batch}");
+    assert!(
+        idx < batch,
+        "slice_batch: idx {idx} out of bounds for batch {batch}"
+    );
     let item_shape: Vec<usize> = s[1..].to_vec();
     let item_size: usize = item_shape.iter().product();
     let data = x.data()[idx * item_size..(idx + 1) * item_size].to_vec();
@@ -1650,7 +1740,12 @@ pub fn slice_batch(x: &Tensor, idx: usize) -> Tensor {
         Tensor::from_op(
             data,
             &item_shape,
-            Arc::new(SliceBatchBackward { input: x.clone(), idx, item_size, batch }),
+            Arc::new(SliceBatchBackward {
+                input: x.clone(),
+                idx,
+                item_size,
+                batch,
+            }),
         )
     } else {
         Tensor::from_vec(data, &item_shape)
@@ -1665,7 +1760,9 @@ struct MseLossTensorBackward {
     n: usize,
 }
 impl GradFn for MseLossTensorBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.pred.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.pred.clone()]
+    }
     fn backward(&self, g: &[f32]) {
         if self.pred.requires_grad() {
             let scale = 2.0 * g[0] / self.n as f32;
@@ -1688,7 +1785,11 @@ impl GradFn for MseLossTensorBackward {
 /// Panics if shapes differ.
 #[must_use]
 pub fn mse_loss_tensor(pred: &Tensor, target: &Tensor) -> Tensor {
-    assert_eq!(pred.shape(), target.shape(), "mse_loss_tensor: shape mismatch");
+    assert_eq!(
+        pred.shape(),
+        target.shape(),
+        "mse_loss_tensor: shape mismatch"
+    );
     let pred_data = pred.data();
     let target_data = target.data();
     let n = pred_data.len();
@@ -1702,7 +1803,11 @@ pub fn mse_loss_tensor(pred: &Tensor, target: &Tensor) -> Tensor {
         Tensor::from_op(
             vec![loss],
             &[1],
-            Arc::new(MseLossTensorBackward { pred: pred.clone(), target_data, n }),
+            Arc::new(MseLossTensorBackward {
+                pred: pred.clone(),
+                target_data,
+                n,
+            }),
         )
     } else {
         Tensor::from_vec(vec![loss], &[1])

@@ -1,9 +1,9 @@
 use chess::board::Board;
-use tensor::global_gpu;
 use chess::fen::from_fen;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
 use std::path::PathBuf;
+use tensor::global_gpu;
 use tracing::info_span;
 use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
 
@@ -203,7 +203,10 @@ fn load_or_new_model(args: &[String]) -> engine::HybridValueNet {
             }
         }
     } else {
-        println!("No saved model found at {}; using random weights", path.display());
+        println!(
+            "No saved model found at {}; using random weights",
+            path.display()
+        );
         engine::HybridValueNet::new()
     }
 }

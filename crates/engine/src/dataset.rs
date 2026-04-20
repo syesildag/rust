@@ -197,16 +197,17 @@ impl Default for ChessDataset {
 }
 
 /// Binary cache format: `[u64 num_samples]` then for each sample:
-/// `[u64 fen_len] [u8; fen_len] [f32 label]`
+/// `[u64 fen_len] [u8; fen_len] [f32 outcome] [u64 game_id]`
 impl Persist for ChessDataset {
     fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
         w.write_all(&(self.samples.len() as u64).to_le_bytes())?;
-        for (board, label) in &self.samples {
+        for (board, outcome, game_id) in &self.samples {
             let fen_bytes = board.to_fen();
             let bytes = fen_bytes.as_bytes();
             w.write_all(&(bytes.len() as u64).to_le_bytes())?;
             w.write_all(bytes)?;
-            w.write_all(&label.to_le_bytes())?;
+            w.write_all(&outcome.to_le_bytes())?;
+            w.write_all(&game_id.to_le_bytes())?;
         }
         Ok(())
     }
@@ -229,7 +230,10 @@ impl Persist for ChessDataset {
             let board = fen::from_fen(&fen)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
             r.read_exact(&mut buf4)?;
-            samples.push((board, f32::from_le_bytes(buf4)));
+            let outcome = f32::from_le_bytes(buf4);
+            r.read_exact(&mut buf8)?;
+            let game_id = u64::from_le_bytes(buf8);
+            samples.push((board, outcome, game_id));
         }
 
         Ok(Self { samples })
@@ -270,7 +274,7 @@ mod tests {
 
     fn dummy_samples(n: usize) -> Vec<Sample> {
         (0..n)
-            .map(|_| (Board::starting_position(), 0.0f32))
+            .map(|_| (Board::starting_position(), 0.0f32, 0u64))
             .collect()
     }
 

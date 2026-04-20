@@ -11,20 +11,23 @@
 //! | `0-1`      | -1.0  |
 //! | `1/2-1/2`  |  0.0  |
 
+use crate::position_db::fnv1a;
 use chess::board::Board;
-use rayon::prelude::*;
 use chess::movegen::generate_legal_moves;
 use chess::moves::{Move, MoveKind};
 use chess::piece::PieceKind;
 use chess::square::Square;
+use rayon::prelude::*;
 
-/// A single training sample: a board position paired with its game outcome.
+/// A single training sample: board position, game outcome, and game ID.
 ///
 /// The outcome label is from White's perspective:
 /// `1.0` = White wins, `-1.0` = Black wins, `0.0` = draw.
 ///
-/// This matches the output range of `HybridValueNet::forward`.
-pub type Sample = (Board, f32);
+/// `game_id` is the FNV-1a hash of the raw PGN text for the game this position
+/// came from. It lets `PositionDb` track training progress per (game, position)
+/// pair rather than per unique position.
+pub type Sample = (Board, f32, u64);
 
 // ─── public API ──────────────────────────────────────────────────────────────
 
@@ -61,6 +64,8 @@ fn parse_game(pgn: &str) -> Vec<Sample> {
         return Vec::new();
     };
 
+    let game_id = fnv1a(pgn.bytes());
+
     let move_text = strip_headers(pgn);
     let tokens = tokenise_moves(&move_text);
 
@@ -72,7 +77,7 @@ fn parse_game(pgn: &str) -> Vec<Sample> {
             break;
         }
         if let Some(mv) = san_to_move(&board, token) {
-            samples.push((board.clone(), outcome));
+            samples.push((board.clone(), outcome, game_id));
             board = board.make_move(mv);
         } else {
             tracing::warn!(token = token.as_str(), "skipped unparseable SAN token");
@@ -265,7 +270,7 @@ mod tests {
         // 7 half-moves (positions before each move)
         assert_eq!(samples.len(), 7);
         // All samples have outcome 1.0
-        assert!(samples.iter().all(|(_, v)| (*v - 1.0).abs() < 1e-6));
+        assert!(samples.iter().all(|(_, v, _)| (*v - 1.0).abs() < 1e-6));
     }
 
     #[test]

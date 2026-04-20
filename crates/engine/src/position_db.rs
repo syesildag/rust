@@ -1,4 +1,4 @@
-//! Persistent map of FEN positions to the highest epoch they were trained in.
+//! Persistent map of (FEN, game_id) pairs to the highest epoch they were trained in.
 //!
 //! Used by the training loop to skip positions that have already been trained
 //! at a higher epoch than the current one.
@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub struct PositionDb {
-    map: HashMap<String, usize>,
+    map: HashMap<u64, usize>,
 }
 
 impl PositionDb {
@@ -29,17 +29,19 @@ impl PositionDb {
         p
     }
 
-    /// Returns `true` if this position should be skipped for `current_epoch`.
-    ///
-    /// Skip condition: `stored_epoch > current_epoch`.
-    pub fn should_skip(&self, fen: &str, current_epoch: usize) -> bool {
-        self.map.get(fen).copied().unwrap_or(0) >= current_epoch
+    /// Returns `true` if this (position, game) pair should be skipped for `current_epoch`.
+    pub fn should_skip(&self, fen: &str, game_id: u64, current_epoch: usize) -> bool {
+        self.map
+            .get(&position_key(fen, game_id))
+            .copied()
+            .unwrap_or(0)
+            >= current_epoch
     }
 
-    /// Records that `fen` was trained at `epoch`. Only updates if the new
-    /// epoch is higher than the stored value.
-    pub fn record(&mut self, fen: String, epoch: usize) {
-        let entry = self.map.entry(fen).or_insert(0);
+    /// Records that `(fen, game_id)` was trained at `epoch`. Only updates if
+    /// the new epoch is higher than the stored value.
+    pub fn record(&mut self, fen: &str, game_id: u64, epoch: usize) {
+        let entry = self.map.entry(position_key(fen, game_id)).or_insert(0);
         if epoch > *entry {
             *entry = epoch;
         }
@@ -55,10 +57,8 @@ impl Default for PositionDb {
 impl Persist for PositionDb {
     fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
         w.write_all(&(self.map.len() as u64).to_le_bytes())?;
-        for (fen, &epoch) in &self.map {
-            let bytes = fen.as_bytes();
-            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
-            w.write_all(bytes)?;
+        for (&key, &epoch) in &self.map {
+            w.write_all(&key.to_le_bytes())?;
             w.write_all(&(epoch as u64).to_le_bytes())?;
         }
         Ok(())
@@ -73,19 +73,30 @@ impl Persist for PositionDb {
 
         for _ in 0..n {
             r.read_exact(&mut buf8)?;
-            let fen_len = u64::from_le_bytes(buf8) as usize;
-
-            let mut fen_bytes = vec![0u8; fen_len];
-            r.read_exact(&mut fen_bytes)?;
-            let fen = String::from_utf8(fen_bytes)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let key = u64::from_le_bytes(buf8);
 
             r.read_exact(&mut buf8)?;
             let epoch = u64::from_le_bytes(buf8) as usize;
 
-            map.insert(fen, epoch);
+            map.insert(key, epoch);
         }
 
         Ok(Self { map })
     }
+}
+
+// ─── hashing ─────────────────────────────────────────────────────────────────
+
+/// FNV-1a 64-bit hash over an arbitrary byte iterator.
+///
+/// Deterministic across runs — safe to use for persisted keys.
+pub(crate) fn fnv1a(bytes: impl Iterator<Item = u8>) -> u64 {
+    bytes.fold(14_695_981_039_346_656_037_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(1_099_511_628_211)
+    })
+}
+
+/// Combines a FEN string and a game ID into a single 64-bit map key.
+fn position_key(fen: &str, game_id: u64) -> u64 {
+    fnv1a(fen.bytes().chain(game_id.to_le_bytes()))
 }

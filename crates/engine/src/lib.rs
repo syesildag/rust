@@ -10,13 +10,13 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod dataset;
-pub mod persist;
-mod position_db;
 pub mod encode;
 pub mod fen_file;
 pub mod model;
 pub mod nn;
+pub mod persist;
 pub mod pgn;
+mod position_db;
 pub mod selfplay;
 pub mod train;
 

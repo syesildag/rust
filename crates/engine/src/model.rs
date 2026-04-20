@@ -126,7 +126,7 @@ impl HybridValueNet {
         let mut seqs: Vec<Tensor> = Vec::with_capacity(b);
         for i in 0..b {
             let xi = ops::slice_batch(&x, i).reshape(&[64, D_MODEL]); // [64, 256]
-            let xi = ops::cat(&[&self.cls_token, &xi]);                // [65, 256]
+            let xi = ops::cat(&[&self.cls_token, &xi]); // [65, 256]
             seqs.push(ops::add(&xi, &self.pos_embed));
         }
         let seq_refs: Vec<&Tensor> = seqs.iter().collect();
@@ -157,7 +157,6 @@ impl HybridValueNet {
         p.extend(self.head.parameters());
         p
     }
-
 }
 
 /// Binary format: `[u64 num_params]` then for each param:
@@ -210,7 +209,10 @@ impl Persist for HybridValueNet {
             if shape != p.shape() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("shape mismatch: file has {shape:?}, model expects {:?}", p.shape()),
+                    format!(
+                        "shape mismatch: file has {shape:?}, model expects {:?}",
+                        p.shape()
+                    ),
                 ));
             }
             let numel: usize = shape.iter().product();

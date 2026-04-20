@@ -55,7 +55,7 @@ fn parse_line(line: &str) -> Option<Sample> {
         Some(0.0f32) // no label → treat as draw
     };
 
-    Some((board, outcome?))
+    Some((board, outcome?, 0u64))
 }
 
 fn parse_outcome(s: &str) -> Option<f32> {

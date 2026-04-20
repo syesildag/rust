@@ -271,7 +271,15 @@ impl Tensor {
             }
         }
         if self.requires_grad() {
-            Self::from_op(out, &[n, m], Arc::new(TBackward { input: self.clone(), m, n }))
+            Self::from_op(
+                out,
+                &[n, m],
+                Arc::new(TBackward {
+                    input: self.clone(),
+                    m,
+                    n,
+                }),
+            )
         } else {
             Self::from_vec(out, &[n, m])
         }
@@ -291,7 +299,13 @@ impl Tensor {
             old = self.numel()
         );
         if self.requires_grad() {
-            Self::from_op(self.data(), shape, Arc::new(ReshapeBackward { input: self.clone() }))
+            Self::from_op(
+                self.data(),
+                shape,
+                Arc::new(ReshapeBackward {
+                    input: self.clone(),
+                }),
+            )
         } else {
             Self::from_vec(self.data(), shape)
         }
@@ -371,7 +385,9 @@ struct ReshapeBackward {
 }
 
 impl GradFn for ReshapeBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
     fn backward(&self, grad_output: &[f32]) {
         self.input.accumulate_grad(grad_output);
     }
@@ -384,7 +400,9 @@ struct TBackward {
 }
 
 impl GradFn for TBackward {
-    fn inputs(&self) -> Vec<Tensor> { vec![self.input.clone()] }
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
     fn backward(&self, grad_output: &[f32]) {
         // grad_output is [N, M]; transpose back to [M, N]
         let (m, n) = (self.m, self.n);

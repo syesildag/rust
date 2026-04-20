@@ -6,6 +6,7 @@
 
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
+use crate::position_db::fnv1a;
 use chess::board::Board;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
@@ -31,8 +32,8 @@ pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
     dataset
 }
 
-/// Plays a single game and returns `(board_before_move, outcome)` for every ply.
-fn play_game(model: &HybridValueNet) -> Vec<(Board, f32)> {
+/// Plays a single game and returns `(board_before_move, outcome, game_id)` for every ply.
+fn play_game(model: &HybridValueNet) -> Vec<(Board, f32, u64)> {
     let mut board = Board::starting_position();
     let mut history: Vec<Board> = Vec::new();
     let max_ply = 400; // prevent infinite games
@@ -64,8 +65,10 @@ fn play_game(model: &HybridValueNet) -> Vec<(Board, f32)> {
     }
 
     let outcome = terminal_outcome(&board);
+    // Derive a stable game ID from the sequence of positions played.
+    let game_id = fnv1a(history.iter().flat_map(|b| b.to_fen().into_bytes()));
 
-    history.into_iter().map(|b| (b, outcome)).collect()
+    history.into_iter().map(|b| (b, outcome, game_id)).collect()
 }
 
 /// Evaluates a candidate move by running the model on the resulting position,

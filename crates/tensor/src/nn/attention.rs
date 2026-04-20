@@ -35,7 +35,11 @@ impl MultiHeadAttention {
     /// Panics if `d_model` is not divisible by `num_heads`.
     #[must_use]
     pub fn new(d_model: usize, num_heads: usize) -> Self {
-        assert_eq!(d_model % num_heads, 0, "d_model must be divisible by num_heads");
+        assert_eq!(
+            d_model % num_heads,
+            0,
+            "d_model must be divisible by num_heads"
+        );
         let d_k = d_model / num_heads;
         Self {
             wq: Linear::new(d_model, d_model, false),
@@ -98,9 +102,10 @@ impl MultiHeadAttention {
                 let val = ops::slice_cols(&v_all, start, end).reshape(&[batch, seq, self.d_k]);
                 let kt = ops::transpose_last_two(&key); // [B, d_k, seq]
                 let scores = ops::mul_scalar(&ops::matmul_batched(&query, &kt), scale); // [B, seq, seq]
-                let attn = ops::softmax(&scores.reshape(&[batch * seq, seq]))
-                    .reshape(&[batch, seq, seq]);
-                ops::matmul_batched(&attn, &val).reshape(&[batch * seq, self.d_k]) // [B*seq, d_k]
+                let attn =
+                    ops::softmax(&scores.reshape(&[batch * seq, seq])).reshape(&[batch, seq, seq]);
+                ops::matmul_batched(&attn, &val).reshape(&[batch * seq, self.d_k])
+                // [B*seq, d_k]
             })
             .collect();
 

@@ -92,7 +92,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         for batch in dataset.batches(cfg.batch_size) {
             let filtered: Vec<_> = batch
                 .iter()
-                .filter(|(board, _)| !pos_db.should_skip(&board.to_fen(), epoch))
+                .filter(|(board, _, game_id)| !pos_db.should_skip(&board.to_fen(), *game_id, epoch))
                 .collect();
 
             n_skipped += batch.len() - filtered.len();
@@ -109,12 +109,12 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
             adam.zero_grad();
 
-            let (boards, labels): (Vec<_>, Vec<f32>) =
-                filtered.iter().map(|(b, l)| ((*b).clone(), *l)).unzip();
+            let (boards, outcomes): (Vec<_>, Vec<f32>) =
+                filtered.iter().map(|(b, l, _)| ((*b).clone(), *l)).unzip();
             let b = boards.len();
 
             let preds = model.forward_batch(&boards);
-            let targets = Tensor::from_vec(labels, &[b, 1]);
+            let targets = Tensor::from_vec(outcomes, &[b, 1]);
             let loss = ops::mse_loss_tensor(&preds, &targets);
 
             loss.backward();
@@ -124,8 +124,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             n_batches += 1;
             info!(batch = n_batches, loss = loss.data()[0], "batch");
 
-            for (board, _) in &filtered {
-                pos_db.record(board.to_fen(), epoch);
+            for (board, _, game_id) in &filtered {
+                pos_db.record(&board.to_fen(), *game_id, epoch);
             }
 
             if shutdown.load(Ordering::SeqCst) {
