@@ -126,7 +126,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             adam.step();
 
             info!(
-                percentage = format!("{}/{} ({:.1}%)", n_samples, dataset.len(), n_samples as f64 / dataset.len() as f64 * 100.0),
+                percentage = format!("{:.1}%", n_samples as f64 / dataset.len() as f64 * 100.0),
                 loss = loss.data()[0],
                 "batch"
             );
