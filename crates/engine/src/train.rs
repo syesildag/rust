@@ -6,7 +6,9 @@ use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
 use crate::persist::Persist;
 use crate::position_db::PositionDb;
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tensor::optim::Adam;
@@ -48,6 +50,22 @@ impl Default for TrainConfig {
 /// `stored_epoch > current_epoch`, enabling resume after interruption.
 /// Send SIGTERM or SIGINT to trigger a clean save before exit.
 ///
+fn save_adam(adam: &Adam, path: &Path) -> std::io::Result<()> {
+    let mut w = BufWriter::new(File::create(path)?);
+    adam.write_state(&mut w)?;
+    w.flush()
+}
+
+fn try_restore_adam(adam: &mut Adam, path: &Path) {
+    if let Ok(file) = File::open(path) {
+        let mut r = BufReader::new(file);
+        match adam.restore_state(&mut r) {
+            Ok(()) => info!(path = %path.display(), "restored Adam optimizer state"),
+            Err(e) => warn!(error = %e, "ignoring saved Adam state — starting fresh"),
+        }
+    }
+}
+
 /// # Errors
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
@@ -65,6 +83,9 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let db_path = PositionDb::db_path(&cfg.output);
     let mut pos_db = PositionDb::load_from(&db_path).unwrap_or_default();
 
+    let adam_path = cfg.output.with_extension("adam");
+    try_restore_adam(&mut adam, &adam_path);
+
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
     if let Err(e) = ctrlc::set_handler(move || {
@@ -80,13 +101,20 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         "starting training"
     );
 
+    macro_rules! save_all {
+        ($model:expr) => {{
+            $model.save_to(&cfg.output)?;
+            pos_db.save_to(&db_path)?;
+            save_adam(&adam, &adam_path)?;
+            return Ok($model);
+        }};
+    }
+
     macro_rules! shutdown_if_requested {
         () => {
             if shutdown.load(Ordering::SeqCst) {
                 info!("shutdown signal — saving and exiting");
-                model.save_to(&cfg.output)?;
-                pos_db.save_to(&db_path)?;
-                return Ok(model);
+                save_all!(model);
             }
         };
     }
@@ -141,7 +169,5 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         info!("epoch {epoch} complete");
     }
 
-    model.save_to(&cfg.output)?;
-    pos_db.save_to(&db_path)?;
-    Ok(model)
+    save_all!(model);
 }

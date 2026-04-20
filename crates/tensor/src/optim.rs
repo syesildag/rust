@@ -4,8 +4,10 @@
 //! the bias-corrected update rule from Kingma & Ba (2015).
 
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
 
 use crate::Tensor;
+use std::io::{Read, Write};
 
 /// Adam optimizer with β₁=0.9, β₂=0.999, ε=1e-8.
 ///
@@ -83,6 +85,73 @@ impl Adam {
         for p in &self.params {
             p.zero_grad();
         }
+    }
+
+    /// Serialises the optimizer state (`t`, `m`, `v`) into `w`.
+    ///
+    /// # Errors
+    /// Returns an I/O error if writing fails.
+    pub fn write_state<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&(self.t as u64).to_le_bytes())?;
+        w.write_all(&(self.m.len() as u64).to_le_bytes())?;
+        for (mi, vi) in self.m.iter().zip(self.v.iter()) {
+            w.write_all(&(mi.len() as u64).to_le_bytes())?;
+            for &x in mi {
+                w.write_all(&x.to_le_bytes())?;
+            }
+            for &x in vi {
+                w.write_all(&x.to_le_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Restores optimizer state from `r`, checking that the parameter layout matches.
+    ///
+    /// # Errors
+    /// Returns an I/O error if reading fails or the saved layout does not match
+    /// the current parameter set (e.g. model architecture changed between runs).
+    pub fn restore_state<R: Read>(&mut self, r: &mut R) -> std::io::Result<()> {
+        let mut buf8 = [0u8; 8];
+        let mut buf4 = [0u8; 4];
+
+        r.read_exact(&mut buf8)?;
+        self.t = u64::from_le_bytes(buf8) as usize;
+
+        r.read_exact(&mut buf8)?;
+        let num_groups = u64::from_le_bytes(buf8) as usize;
+        if num_groups != self.m.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "group count mismatch: file has {num_groups}, optimizer expects {}",
+                    self.m.len()
+                ),
+            ));
+        }
+
+        for i in 0..num_groups {
+            r.read_exact(&mut buf8)?;
+            let len = u64::from_le_bytes(buf8) as usize;
+            if len != self.m[i].len() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "size mismatch for group {i}: file has {len}, optimizer expects {}",
+                        self.m[i].len()
+                    ),
+                ));
+            }
+            for x in &mut self.m[i] {
+                r.read_exact(&mut buf4)?;
+                *x = f32::from_le_bytes(buf4);
+            }
+            for x in &mut self.v[i] {
+                r.read_exact(&mut buf4)?;
+                *x = f32::from_le_bytes(buf4);
+            }
+        }
+        Ok(())
     }
 }
 
