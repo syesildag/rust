@@ -33,7 +33,7 @@ impl PositionDb {
     ///
     /// Skip condition: `stored_epoch > current_epoch`.
     pub fn should_skip(&self, fen: &str, current_epoch: usize) -> bool {
-        self.map.get(fen).copied().unwrap_or(0) > current_epoch
+        self.map.get(fen).copied().unwrap_or(0) >= current_epoch
     }
 
     /// Records that `fen` was trained at `epoch`. Only updates if the new
