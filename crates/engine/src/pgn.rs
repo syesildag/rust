@@ -12,6 +12,7 @@
 //! | `1/2-1/2`  |  0.0  |
 
 use chess::board::Board;
+use rayon::prelude::*;
 use chess::movegen::generate_legal_moves;
 use chess::moves::{Move, MoveKind};
 use chess::piece::PieceKind;
@@ -31,7 +32,7 @@ pub type Sample = (Board, f32);
 /// game contained in the text.
 #[must_use]
 pub fn parse_pgn(pgn: &str) -> Vec<Sample> {
-    games(pgn).into_iter().flat_map(parse_game).collect()
+    games(pgn).into_par_iter().flat_map(parse_game).collect()
 }
 
 // ─── game splitting ───────────────────────────────────────────────────────────

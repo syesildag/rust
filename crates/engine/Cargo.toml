@@ -11,3 +11,4 @@ chess   = { path = "../chess" }
 tensor  = { path = "../tensor" }
 tracing.workspace = true
 ctrlc   = "3"
+rayon.workspace = true
