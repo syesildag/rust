@@ -3,3 +3,5 @@ data/
 .worktrees/
 librust_out.rlib
 model.bin
+model.bin.dscache
+model.bin.posdb
