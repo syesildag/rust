@@ -83,8 +83,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         "starting training"
     );
 
-    for epoch in 0..cfg.epochs {
-        let epoch_span = info_span!("epoch", n = epoch + 1, total = cfg.epochs);
+    for epoch in 1..=cfg.epochs {
+        let epoch_span = info_span!("epoch", n = epoch, total = cfg.epochs);
         let _epoch_guard = epoch_span.enter();
 
         dataset.shuffle(epoch as u64);

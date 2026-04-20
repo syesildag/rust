@@ -8,6 +8,7 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use tracing::debug;
 
 pub trait Persist: Sized {
     /// Serialises `self` into `w`.
@@ -27,6 +28,7 @@ pub trait Persist: Sized {
     /// # Errors
     /// Returns an I/O error if the file cannot be created or written.
     fn save_to(&self, path: &Path) -> std::io::Result<()> {
+        debug!(path = %path.display(), "saving");
         let mut w = BufWriter::new(File::create(path)?);
         self.write_to(&mut w)?;
         w.flush()
