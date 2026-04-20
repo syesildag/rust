@@ -134,8 +134,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
             info!(
                 percentage = format!("{:.1}%", n_samples as f64 / dataset.len() as f64 * 100.0),
-                loss = loss.data()[0],
-                "batch"
+                loss = loss.data()[0]
             );
 
             for (board, _, game_id) in &filtered {
