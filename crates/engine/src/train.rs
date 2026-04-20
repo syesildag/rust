@@ -5,9 +5,11 @@
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tensor::optim::Adam;
 use tensor::{ops, Tensor};
-use tracing::{debug, info, info_span};
+use tracing::{info, info_span, warn};
 
 /// Hyper-parameters for a training run.
 pub struct TrainConfig {
@@ -19,7 +21,7 @@ pub struct TrainConfig {
     pub batch_size: usize,
     /// Adam learning rate.
     pub lr: f32,
-    /// Reserved for future checkpoint saving.
+    /// Path where the trained model is written.
     pub output: PathBuf,
 }
 
@@ -40,6 +42,10 @@ impl Default for TrainConfig {
 /// Loads PGN games, shuffles them each epoch, computes MSE loss over each
 /// mini-batch, and updates the model with Adam.
 ///
+/// Positions tracked in the `.posdb` sidecar file are skipped when
+/// `stored_epoch > current_epoch`, enabling resume after interruption.
+/// Send SIGTERM or SIGINT to trigger a clean save before exit.
+///
 /// # Errors
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
@@ -52,6 +58,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             std::io::ErrorKind::InvalidInput,
             "no positions loaded — check that the PGN paths are correct",
         ));
+    }
+
+    let db_path = crate::position_db::PositionDb::db_path(&cfg.output);
+    let mut pos_db = crate::position_db::PositionDb::load(&db_path)?;
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_flag = Arc::clone(&shutdown);
+    if let Err(e) = ctrlc::set_handler(move || {
+        shutdown_flag.store(true, Ordering::SeqCst);
+    }) {
+        warn!(error = %e, "could not register signal handler — graceful shutdown unavailable");
     }
 
     info!(
@@ -68,12 +85,30 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         dataset.shuffle(epoch as u64);
         let mut total_loss = 0.0f32;
         let mut n_batches = 0usize;
+        let mut n_skipped = 0usize;
 
         for batch in dataset.batches(cfg.batch_size) {
+            let filtered: Vec<_> = batch
+                .iter()
+                .filter(|(board, _)| !pos_db.should_skip(&board.to_fen(), epoch))
+                .collect();
+
+            n_skipped += batch.len() - filtered.len();
+
+            if filtered.is_empty() {
+                if shutdown.load(Ordering::SeqCst) {
+                    info!("shutdown signal — saving and exiting");
+                    model.save(&cfg.output)?;
+                    pos_db.save(&db_path)?;
+                    return Ok(model);
+                }
+                continue;
+            }
+
             adam.zero_grad();
 
             let (boards, labels): (Vec<_>, Vec<f32>) =
-                batch.iter().map(|(b, l)| (b.clone(), *l)).unzip();
+                filtered.iter().map(|(b, l)| ((*b).clone(), *l)).unzip();
             let b = boards.len();
 
             let preds = model.forward_batch(&boards);
@@ -85,7 +120,18 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
             total_loss += loss.data()[0];
             n_batches += 1;
-            debug!(batch = n_batches, loss = loss.data()[0], "batch");
+            info!(batch = n_batches, loss = loss.data()[0], "batch");
+
+            for (board, _) in &filtered {
+                pos_db.record(board.to_fen(), epoch);
+            }
+
+            if shutdown.load(Ordering::SeqCst) {
+                info!("shutdown signal — saving and exiting");
+                model.save(&cfg.output)?;
+                pos_db.save(&db_path)?;
+                return Ok(model);
+            }
         }
 
         let avg = if n_batches > 0 {
@@ -93,10 +139,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         } else {
             0.0
         };
-        info!(avg_loss = avg, "epoch complete");
+        info!(avg_loss = avg, skipped = n_skipped, "epoch complete");
     }
 
     model.save(&cfg.output)?;
-
+    pos_db.save(&db_path)?;
     Ok(model)
 }

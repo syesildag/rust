@@ -10,6 +10,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod dataset;
+mod position_db;
 pub mod encode;
 pub mod fen_file;
 pub mod model;
