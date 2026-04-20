@@ -30,13 +30,12 @@
 
 use crate::encode::{encode_batch, encode_boards};
 use crate::nn::ResNetBackbone;
+use crate::persist::Persist;
 use chess::board::Board;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::io::{Read, Write};
 use tensor::nn::{Linear, TransformerEncoder};
 use tensor::{ops, Tensor};
-use tracing::{info, trace_span};
+use tracing::trace_span;
 
 const D_MODEL: usize = 256;
 const NUM_HEADS: usize = 8;
@@ -159,17 +158,13 @@ impl HybridValueNet {
         p
     }
 
-    /// Saves all model parameters to a binary file.
-    ///
-    /// Format: `[u64 num_params] then for each param: [u64 ndim] [u64; ndim] [f32; numel]`.
-    ///
-    /// # Errors
-    /// Returns an I/O error if the file cannot be written.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let params = self.parameters();
-        let f = File::create(path)?;
-        let mut w = BufWriter::new(f);
+}
 
+/// Binary format: `[u64 num_params]` then for each param:
+/// `[u64 ndim] [u64; ndim shape] [f32; numel data]`
+impl Persist for HybridValueNet {
+    fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        let params = self.parameters();
         w.write_all(&(params.len() as u64).to_le_bytes())?;
         for p in &params {
             let shape = p.shape();
@@ -177,27 +172,15 @@ impl HybridValueNet {
             for &dim in shape {
                 w.write_all(&(dim as u64).to_le_bytes())?;
             }
-            let data = p.data();
-            for &val in &data {
+            for &val in &p.data() {
                 w.write_all(&val.to_le_bytes())?;
             }
         }
-        w.flush()?;
-        info!(path = %path.display(), params = params.len(), "model saved");
         Ok(())
     }
 
-    /// Loads model parameters from a binary file produced by [`Self::save`].
-    ///
-    /// Creates a fresh model and overwrites every parameter with the stored weights.
-    ///
-    /// # Errors
-    /// Returns an I/O error if the file cannot be read or has mismatched parameter counts.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn load(path: &Path) -> std::io::Result<Self> {
-        let f = File::open(path)?;
-        let mut r = BufReader::new(f);
-
+    fn read_from<R: Read>(r: &mut R) -> std::io::Result<Self> {
         let mut buf8 = [0u8; 8];
         let mut buf4 = [0u8; 4];
 
@@ -238,11 +221,6 @@ impl HybridValueNet {
             }
             p.set_data(&data);
         }
-
-        // Explicitly drop BufReader to close the file before returning.
-        drop(r);
-
-        info!(path = %path.display(), params = num_params, "model loaded");
         Ok(model)
     }
 }

@@ -192,7 +192,7 @@ fn load_or_new_model(args: &[String]) -> engine::HybridValueNet {
     let path_str = flag_value(args, "--model").unwrap_or(DEFAULT_MODEL_PATH);
     let path = std::path::Path::new(path_str);
     if path.exists() {
-        match engine::HybridValueNet::load(path) {
+        match engine::persist::Persist::load_from(path) {
             Ok(m) => {
                 println!("Loaded model from {}", path.display());
                 m

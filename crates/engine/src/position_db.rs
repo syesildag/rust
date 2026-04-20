@@ -5,9 +5,9 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
+use crate::persist::Persist;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub struct PositionDb {
@@ -29,12 +29,42 @@ impl PositionDb {
         p
     }
 
-    /// Loads from disk. Returns an empty DB if the file does not exist.
-    pub fn load(path: &Path) -> std::io::Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new());
+    /// Returns `true` if this position should be skipped for `current_epoch`.
+    ///
+    /// Skip condition: `stored_epoch > current_epoch`.
+    pub fn should_skip(&self, fen: &str, current_epoch: usize) -> bool {
+        self.map.get(fen).copied().unwrap_or(0) > current_epoch
+    }
+
+    /// Records that `fen` was trained at `epoch`. Only updates if the new
+    /// epoch is higher than the stored value.
+    pub fn record(&mut self, fen: String, epoch: usize) {
+        let entry = self.map.entry(fen).or_insert(0);
+        if epoch > *entry {
+            *entry = epoch;
         }
-        let mut r = BufReader::new(File::open(path)?);
+    }
+}
+
+impl Default for PositionDb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Persist for PositionDb {
+    fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&(self.map.len() as u64).to_le_bytes())?;
+        for (fen, &epoch) in &self.map {
+            let bytes = fen.as_bytes();
+            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
+            w.write_all(bytes)?;
+            w.write_all(&(epoch as u64).to_le_bytes())?;
+        }
+        Ok(())
+    }
+
+    fn read_from<R: Read>(r: &mut R) -> std::io::Result<Self> {
         let mut buf8 = [0u8; 8];
 
         r.read_exact(&mut buf8)?;
@@ -57,34 +87,5 @@ impl PositionDb {
         }
 
         Ok(Self { map })
-    }
-
-    /// Persists the map to disk, overwriting any existing file.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let mut w = BufWriter::new(File::create(path)?);
-        w.write_all(&(self.map.len() as u64).to_le_bytes())?;
-        for (fen, &epoch) in &self.map {
-            let bytes = fen.as_bytes();
-            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
-            w.write_all(bytes)?;
-            w.write_all(&(epoch as u64).to_le_bytes())?;
-        }
-        w.flush()
-    }
-
-    /// Returns `true` if this position should be skipped for `current_epoch`.
-    ///
-    /// Skip condition: `stored_epoch > current_epoch`.
-    pub fn should_skip(&self, fen: &str, current_epoch: usize) -> bool {
-        self.map.get(fen).copied().unwrap_or(0) > current_epoch
-    }
-
-    /// Records that `fen` was trained at `epoch`. Only updates if the new
-    /// epoch is higher than the stored value.
-    pub fn record(&mut self, fen: String, epoch: usize) {
-        let entry = self.map.entry(fen).or_insert(0);
-        if epoch > *entry {
-            *entry = epoch;
-        }
     }
 }

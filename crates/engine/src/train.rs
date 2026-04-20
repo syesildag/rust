@@ -4,6 +4,8 @@
 
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
+use crate::persist::Persist;
+use crate::position_db::PositionDb;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -63,8 +65,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         ));
     }
 
-    let db_path = crate::position_db::PositionDb::db_path(&cfg.output);
-    let mut pos_db = crate::position_db::PositionDb::load(&db_path)?;
+    let db_path = PositionDb::db_path(&cfg.output);
+    let mut pos_db = PositionDb::load_from(&db_path).unwrap_or_default();
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
@@ -101,8 +103,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             if filtered.is_empty() {
                 if shutdown.load(Ordering::SeqCst) {
                     info!("shutdown signal — saving and exiting");
-                    model.save(&cfg.output)?;
-                    pos_db.save(&db_path)?;
+                    model.save_to(&cfg.output)?;
+                    pos_db.save_to(&db_path)?;
                     return Ok(model);
                 }
                 continue;
@@ -131,8 +133,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
             if shutdown.load(Ordering::SeqCst) {
                 info!("shutdown signal — saving and exiting");
-                model.save(&cfg.output)?;
-                pos_db.save(&db_path)?;
+                model.save_to(&cfg.output)?;
+                pos_db.save_to(&db_path)?;
                 return Ok(model);
             }
         }
@@ -145,7 +147,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         info!(avg_loss = avg, skipped = n_skipped, "epoch complete");
     }
 
-    model.save(&cfg.output)?;
-    pos_db.save(&db_path)?;
+    model.save_to(&cfg.output)?;
+    pos_db.save_to(&db_path)?;
     Ok(model)
 }

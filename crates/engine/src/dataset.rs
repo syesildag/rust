@@ -3,10 +3,11 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use crate::fen_file::parse_fen_file;
+use crate::persist::Persist;
 use crate::pgn::{parse_pgn, Sample};
 use chess::fen;
-use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tracing::{info, warn};
@@ -83,7 +84,7 @@ impl ChessDataset {
     #[must_use]
     pub fn load_with_cache(paths: &[PathBuf], cache_path: &Path) -> Self {
         if cache_is_valid(cache_path, paths) {
-            match Self::load_cache(cache_path) {
+            match Self::load_from(cache_path) {
                 Ok(ds) => {
                     info!(samples = ds.len(), "loaded dataset from cache");
                     return ds;
@@ -92,51 +93,12 @@ impl ChessDataset {
             }
         }
         let ds = Self::from_pgn_files(paths);
-        if let Err(e) = ds.save_cache(cache_path) {
+        if let Err(e) = ds.save_to(cache_path) {
             warn!(error = %e, "could not save dataset cache");
         } else {
             info!(samples = ds.len(), "dataset cache written");
         }
         ds
-    }
-
-    fn save_cache(&self, path: &Path) -> std::io::Result<()> {
-        let mut w = BufWriter::new(File::create(path)?);
-        w.write_all(&(self.samples.len() as u64).to_le_bytes())?;
-        for (board, label) in &self.samples {
-            let fen = board.to_fen();
-            let bytes = fen.as_bytes();
-            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
-            w.write_all(bytes)?;
-            w.write_all(&label.to_le_bytes())?;
-        }
-        w.flush()
-    }
-
-    fn load_cache(path: &Path) -> std::io::Result<Self> {
-        let mut r = BufReader::new(File::open(path)?);
-        let mut buf8 = [0u8; 8];
-        let mut buf4 = [0u8; 4];
-
-        r.read_exact(&mut buf8)?;
-        let n = u64::from_le_bytes(buf8) as usize;
-        let mut samples = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            r.read_exact(&mut buf8)?;
-            let fen_len = u64::from_le_bytes(buf8) as usize;
-            let mut fen_bytes = vec![0u8; fen_len];
-            r.read_exact(&mut fen_bytes)?;
-            let fen = String::from_utf8(fen_bytes)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let board = fen::from_fen(&fen)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-            r.read_exact(&mut buf4)?;
-            let label = f32::from_le_bytes(buf4);
-            samples.push((board, label));
-        }
-
-        Ok(Self { samples })
     }
 
     /// Extends the dataset with additional samples (e.g. from self-play).
@@ -203,6 +165,46 @@ impl ChessDataset {
 impl Default for ChessDataset {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Binary cache format: `[u64 num_samples]` then for each sample:
+/// `[u64 fen_len] [u8; fen_len] [f32 label]`
+impl Persist for ChessDataset {
+    fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&(self.samples.len() as u64).to_le_bytes())?;
+        for (board, label) in &self.samples {
+            let fen_bytes = board.to_fen();
+            let bytes = fen_bytes.as_bytes();
+            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
+            w.write_all(bytes)?;
+            w.write_all(&label.to_le_bytes())?;
+        }
+        Ok(())
+    }
+
+    fn read_from<R: Read>(r: &mut R) -> std::io::Result<Self> {
+        let mut buf8 = [0u8; 8];
+        let mut buf4 = [0u8; 4];
+
+        r.read_exact(&mut buf8)?;
+        let n = u64::from_le_bytes(buf8) as usize;
+        let mut samples = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            r.read_exact(&mut buf8)?;
+            let fen_len = u64::from_le_bytes(buf8) as usize;
+            let mut fen_bytes = vec![0u8; fen_len];
+            r.read_exact(&mut fen_bytes)?;
+            let fen = String::from_utf8(fen_bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let board = fen::from_fen(&fen)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            r.read_exact(&mut buf4)?;
+            samples.push((board, f32::from_le_bytes(buf4)));
+        }
+
+        Ok(Self { samples })
     }
 }
 
