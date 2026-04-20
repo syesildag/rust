@@ -127,7 +127,9 @@ impl Adam {
     /// Attaches live model parameters and learning rate to a state-only shell, consuming it.
     ///
     /// # Errors
-    /// Returns an error if the parameter count or any per-parameter size does not match the saved moments.
+    /// Returns an error if the parameter count or any per-parameter size does not match the saved
+    /// moments, or if any saved moment value is non-finite (NaN/Inf), which indicates the state
+    /// was written after a diverged training run and must not be used.
     pub fn with_params(mut self, params: Vec<Tensor>, lr: f32) -> std::io::Result<Self> {
         if params.len() != self.m.len() {
             return Err(std::io::Error::new(
@@ -150,6 +152,16 @@ impl Adam {
                     ),
                 ));
             }
+        }
+        // Reject corrupted state: a non-finite moment value would immediately
+        // produce NaN weights on the first optimizer step.
+        let moments_ok = self.m.iter().chain(self.v.iter())
+            .all(|slot| slot.iter().all(|v| v.is_finite()));
+        if !moments_ok {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "saved Adam state contains NaN/Inf moments — state is corrupted",
+            ));
         }
         self.params = params;
         self.lr = lr;

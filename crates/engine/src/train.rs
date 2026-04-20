@@ -104,6 +104,12 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         let mut n_samples = 0usize;
 
         for batch in dataset.batches(cfg.batch_size) {
+
+            if shutdown.load(Ordering::SeqCst) {
+                info!("shutdown signal received — saving progress and exiting…");
+                break 'training;
+            }
+
             let filtered: Vec<_> = batch
                 .iter()
                 .filter(|(board, _, game_id)| !pos_db.should_skip(&board.to_fen(), *game_id, epoch))
@@ -112,10 +118,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             n_samples += batch.len();
 
             if filtered.is_empty() {
-                if shutdown.load(Ordering::SeqCst) {
-                    info!("shutdown signal — saving and exiting");
-                    break 'training;
-                }
                 continue;
             }
 
@@ -151,10 +153,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
             }
 
-            if shutdown.load(Ordering::SeqCst) {
-                info!("shutdown signal — saving and exiting");
-                break 'training;
-            }
+
         }
 
         info!("epoch {epoch} complete");
