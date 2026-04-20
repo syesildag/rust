@@ -8,7 +8,6 @@
 use crate::persist::Persist;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
 
 pub struct PositionDb {
     map: HashMap<u64, usize>,
@@ -19,14 +18,6 @@ impl PositionDb {
         Self {
             map: HashMap::new(),
         }
-    }
-
-    /// Derives the DB file path from the model output path.
-    /// E.g. `"model.bin"` → `"model.bin.posdb"`
-    pub fn db_path(output: &Path) -> PathBuf {
-        let mut p = output.to_owned();
-        p.as_mut_os_string().push(".posdb");
-        p
     }
 
     /// Returns `true` if this (position, game) pair should be skipped for `current_epoch`.

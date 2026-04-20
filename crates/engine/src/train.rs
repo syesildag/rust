@@ -61,7 +61,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         ));
     }
 
-    let db_path = PositionDb::db_path(&cfg.output);
+    let db_path = cfg.output.with_extension("pos");
     let mut pos_db = PositionDb::load_from(&db_path).unwrap_or_default();
 
     let adam_path = cfg.output.with_extension("adam");
