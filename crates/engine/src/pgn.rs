@@ -64,10 +64,9 @@ fn parse_game(pgn: &str) -> Vec<Sample> {
         return Vec::new();
     };
 
-    let game_id = fnv1a(pgn.bytes());
-
     let move_text = strip_headers(pgn);
     let tokens = tokenise_moves(&move_text);
+    let game_id = fnv1a(tokens.iter().flat_map(|t| t.bytes()));
 
     let mut board = Board::starting_position();
     let mut samples = Vec::new();

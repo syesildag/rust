@@ -178,7 +178,7 @@ impl ChessDataset {
                 } else {
                     parse_pgn(&text)
                 };
-                self.samples.extend(new_samples);
+                self.samplxes.extend(new_samples);
                 info!(
                     samples = self.samples.len() - before,
                     path = %path.display(),
