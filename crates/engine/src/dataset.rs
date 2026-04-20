@@ -9,7 +9,6 @@ use chess::fen;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use tracing::{info, warn};
 
 /// A dataset of (board position, outcome) pairs for supervised training.
@@ -69,34 +68,63 @@ impl ChessDataset {
         ds
     }
 
-    /// Derives the cache file path from the model output path.
-    /// E.g. `"model.bin"` → `"model.bin.dscache"`
+    /// Derives the cache file path from a data file path.
+    /// E.g. `"games.pgn"` → `"games.pgn.dscache"`
     #[must_use]
-    pub fn cache_path(output: &Path) -> PathBuf {
-        let mut p = output.to_owned();
+    pub fn cache_path(data: &Path) -> PathBuf {
+        let mut p = data.to_owned();
         p.as_mut_os_string().push(".dscache");
         p
     }
 
-    /// Loads from a binary cache if valid, otherwise parses PGN files and saves the cache.
+    /// Loads from per-file binary caches if valid, otherwise parses and saves each cache.
     ///
-    /// The cache is valid when it exists and is newer than every source file.
+    /// Each data file gets its own `.dscache` sidecar. The cache is valid when it
+    /// exists and is newer than its corresponding source file.
     #[must_use]
-    pub fn load_with_cache(paths: &[PathBuf], cache_path: &Path) -> Self {
-        if cache_is_valid(cache_path, paths) {
-            match Self::load_from(cache_path) {
+    pub fn load_with_cache(paths: &[PathBuf]) -> Self {
+        let mut ds = Self::new();
+        for path in paths {
+            if path.is_dir() {
+                let entries = match fs::read_dir(path) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        warn!(path = %path.display(), error = %e, "cannot read directory");
+                        continue;
+                    }
+                };
+                let mut found: Vec<_> = entries
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| is_supported_extension(p))
+                    .collect();
+                found.sort();
+                for p in &found {
+                    ds.extend(Self::load_file_cached(p).samples);
+                }
+            } else {
+                ds.extend(Self::load_file_cached(path).samples);
+            }
+        }
+        ds
+    }
+
+    fn load_file_cached(path: &Path) -> Self {
+        let cache = Self::cache_path(path);
+        if cache_is_valid_single(&cache, path) {
+            match Self::load_from(&cache) {
                 Ok(ds) => {
-                    info!(samples = ds.len(), "loaded dataset from cache");
+                    info!(samples = ds.len(), path = %path.display(), "loaded file from cache");
                     return ds;
                 }
                 Err(e) => warn!(error = %e, "cache unreadable — re-parsing"),
             }
         }
-        let ds = Self::from_pgn_files(paths);
-        if let Err(e) = ds.save_to(cache_path) {
+        let mut ds = Self::new();
+        ds.load_one(path);
+        if let Err(e) = ds.save_to(&cache) {
             warn!(error = %e, "could not save dataset cache");
         } else {
-            info!(samples = ds.len(), "dataset cache written");
+            info!(samples = ds.len(), path = %path.display(), "dataset cache written");
         }
         ds
     }
@@ -210,44 +238,15 @@ impl Persist for ChessDataset {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-/// Returns `true` if the cache file exists and is newer than every source file.
-fn cache_is_valid(cache_path: &Path, paths: &[PathBuf]) -> bool {
+/// Returns `true` if the cache file exists and is newer than its source file.
+fn cache_is_valid_single(cache_path: &Path, source: &Path) -> bool {
     let Ok(cache_mtime) = fs::metadata(cache_path).and_then(|m| m.modified()) else {
         return false;
     };
-    match newest_source_mtime(paths) {
-        None => false,
-        Some(src) => cache_mtime.duration_since(src).is_ok(),
-    }
-}
-
-/// Returns the newest modification time across all source files (recursing one
-/// level into directories).
-fn newest_source_mtime(paths: &[PathBuf]) -> Option<SystemTime> {
-    let mut newest: Option<SystemTime> = None;
-    let mut consider = |path: &Path| {
-        if let Ok(mtime) = fs::metadata(path).and_then(|m| m.modified()) {
-            newest = Some(match newest {
-                None => mtime,
-                Some(n) => if mtime > n { mtime } else { n },
-            });
-        }
+    let Ok(src_mtime) = fs::metadata(source).and_then(|m| m.modified()) else {
+        return false;
     };
-    for path in paths {
-        if path.is_dir() {
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if is_supported_extension(&p) {
-                        consider(&p);
-                    }
-                }
-            }
-        } else {
-            consider(path);
-        }
-    }
-    newest
+    cache_mtime.duration_since(src_mtime).is_ok()
 }
 
 fn is_fen_extension(path: &Path) -> bool {
