@@ -96,9 +96,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         let _epoch_guard = epoch_span.enter();
 
         dataset.shuffle(epoch as u64);
-        let mut total_loss = 0.0f32;
-        let mut n_batches = 0usize;
-        let mut n_skipped = 0usize;
+
+        let mut n_samples = 0usize;
 
         for batch in dataset.batches(cfg.batch_size) {
             let filtered: Vec<_> = batch
@@ -106,7 +105,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 .filter(|(board, _, game_id)| !pos_db.should_skip(&board.to_fen(), *game_id, epoch))
                 .collect();
 
-            n_skipped += batch.len() - filtered.len();
+            n_samples += batch.len();
 
             if filtered.is_empty() {
                 shutdown_if_requested!();
@@ -126,9 +125,11 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             loss.backward();
             adam.step();
 
-            total_loss += loss.data()[0];
-            n_batches += 1;
-            info!(batch = n_batches, loss = loss.data()[0], "batch");
+            info!(
+                percentage = format!("{}/{} ({:.1}%)", n_samples, dataset.len(), n_samples as f64 / dataset.len() as f64 * 100.0),
+                loss = loss.data()[0],
+                "batch"
+            );
 
             for (board, _, game_id) in &filtered {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
@@ -137,12 +138,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             shutdown_if_requested!();
         }
 
-        let avg = if n_batches > 0 {
-            total_loss / n_batches as f32
-        } else {
-            0.0
-        };
-        info!(avg_loss = avg, skipped = n_skipped, "epoch complete");
+        info!("epoch {epoch} complete");
     }
 
     model.save_to(&cfg.output)?;
