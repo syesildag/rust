@@ -50,7 +50,10 @@ impl Default for TrainConfig {
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let model = HybridValueNet::new();
-    let mut dataset = ChessDataset::from_pgn_files(&cfg.pgn_paths);
+    let mut dataset = ChessDataset::load_with_cache(
+        &cfg.pgn_paths,
+        &ChessDataset::cache_path(&cfg.output),
+    );
     let mut adam = Adam::new(model.parameters(), cfg.lr);
 
     if dataset.is_empty() {

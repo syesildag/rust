@@ -1,8 +1,14 @@
 //! `ChessDataset`: holds (Board, outcome) samples and provides shuffled mini-batches.
 
+#![allow(clippy::cast_possible_truncation)]
+
 use crate::fen_file::parse_fen_file;
 use crate::pgn::{parse_pgn, Sample};
-use std::path::Path;
+use chess::fen;
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use tracing::{info, warn};
 
 /// A dataset of (board position, outcome) pairs for supervised training.
@@ -60,6 +66,77 @@ impl ChessDataset {
             }
         }
         ds
+    }
+
+    /// Derives the cache file path from the model output path.
+    /// E.g. `"model.bin"` → `"model.bin.dscache"`
+    #[must_use]
+    pub fn cache_path(output: &Path) -> PathBuf {
+        let mut p = output.to_owned();
+        p.as_mut_os_string().push(".dscache");
+        p
+    }
+
+    /// Loads from a binary cache if valid, otherwise parses PGN files and saves the cache.
+    ///
+    /// The cache is valid when it exists and is newer than every source file.
+    #[must_use]
+    pub fn load_with_cache(paths: &[PathBuf], cache_path: &Path) -> Self {
+        if cache_is_valid(cache_path, paths) {
+            match Self::load_cache(cache_path) {
+                Ok(ds) => {
+                    info!(samples = ds.len(), "loaded dataset from cache");
+                    return ds;
+                }
+                Err(e) => warn!(error = %e, "cache unreadable — re-parsing"),
+            }
+        }
+        let ds = Self::from_pgn_files(paths);
+        if let Err(e) = ds.save_cache(cache_path) {
+            warn!(error = %e, "could not save dataset cache");
+        } else {
+            info!(samples = ds.len(), "dataset cache written");
+        }
+        ds
+    }
+
+    fn save_cache(&self, path: &Path) -> std::io::Result<()> {
+        let mut w = BufWriter::new(File::create(path)?);
+        w.write_all(&(self.samples.len() as u64).to_le_bytes())?;
+        for (board, label) in &self.samples {
+            let fen = board.to_fen();
+            let bytes = fen.as_bytes();
+            w.write_all(&(bytes.len() as u64).to_le_bytes())?;
+            w.write_all(bytes)?;
+            w.write_all(&label.to_le_bytes())?;
+        }
+        w.flush()
+    }
+
+    fn load_cache(path: &Path) -> std::io::Result<Self> {
+        let mut r = BufReader::new(File::open(path)?);
+        let mut buf8 = [0u8; 8];
+        let mut buf4 = [0u8; 4];
+
+        r.read_exact(&mut buf8)?;
+        let n = u64::from_le_bytes(buf8) as usize;
+        let mut samples = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            r.read_exact(&mut buf8)?;
+            let fen_len = u64::from_le_bytes(buf8) as usize;
+            let mut fen_bytes = vec![0u8; fen_len];
+            r.read_exact(&mut fen_bytes)?;
+            let fen = String::from_utf8(fen_bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let board = fen::from_fen(&fen)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            r.read_exact(&mut buf4)?;
+            let label = f32::from_le_bytes(buf4);
+            samples.push((board, label));
+        }
+
+        Ok(Self { samples })
     }
 
     /// Extends the dataset with additional samples (e.g. from self-play).
@@ -130,6 +207,46 @@ impl Default for ChessDataset {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/// Returns `true` if the cache file exists and is newer than every source file.
+fn cache_is_valid(cache_path: &Path, paths: &[PathBuf]) -> bool {
+    let Ok(cache_mtime) = fs::metadata(cache_path).and_then(|m| m.modified()) else {
+        return false;
+    };
+    match newest_source_mtime(paths) {
+        None => false,
+        Some(src) => cache_mtime.duration_since(src).is_ok(),
+    }
+}
+
+/// Returns the newest modification time across all source files (recursing one
+/// level into directories).
+fn newest_source_mtime(paths: &[PathBuf]) -> Option<SystemTime> {
+    let mut newest: Option<SystemTime> = None;
+    let mut consider = |path: &Path| {
+        if let Ok(mtime) = fs::metadata(path).and_then(|m| m.modified()) {
+            newest = Some(match newest {
+                None => mtime,
+                Some(n) => if mtime > n { mtime } else { n },
+            });
+        }
+    };
+    for path in paths {
+        if path.is_dir() {
+            if let Ok(entries) = fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if is_supported_extension(&p) {
+                        consider(&p);
+                    }
+                }
+            }
+        } else {
+            consider(path);
+        }
+    }
+    newest
+}
 
 fn is_fen_extension(path: &Path) -> bool {
     path.extension()
