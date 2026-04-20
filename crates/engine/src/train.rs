@@ -6,9 +6,7 @@ use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
 use crate::persist::Persist;
 use crate::position_db::PositionDb;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tensor::optim::Adam;
@@ -50,28 +48,11 @@ impl Default for TrainConfig {
 /// `stored_epoch > current_epoch`, enabling resume after interruption.
 /// Send SIGTERM or SIGINT to trigger a clean save before exit.
 ///
-fn save_adam(adam: &Adam, path: &Path) -> std::io::Result<()> {
-    let mut w = BufWriter::new(File::create(path)?);
-    adam.write_state(&mut w)?;
-    w.flush()
-}
-
-fn try_restore_adam(adam: &mut Adam, path: &Path) {
-    if let Ok(file) = File::open(path) {
-        let mut r = BufReader::new(file);
-        match adam.restore_state(&mut r) {
-            Ok(()) => info!(path = %path.display(), "restored Adam optimizer state"),
-            Err(e) => warn!(error = %e, "ignoring saved Adam state — starting fresh"),
-        }
-    }
-}
-
 /// # Errors
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let model = HybridValueNet::new();
     let mut dataset = ChessDataset::load_with_cache(&cfg.pgn_paths);
-    let mut adam = Adam::new(model.parameters(), cfg.lr);
 
     if dataset.is_empty() {
         return Err(std::io::Error::new(
@@ -84,7 +65,20 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let mut pos_db = PositionDb::load_from(&db_path).unwrap_or_default();
 
     let adam_path = cfg.output.with_extension("adam");
-    try_restore_adam(&mut adam, &adam_path);
+    let mut adam = if let Ok(saved) = Adam::load_from(&adam_path) {
+        match saved.with_params(model.parameters(), cfg.lr) {
+            Ok(restored) => {
+                info!(path = %adam_path.display(), "restored Adam optimizer state");
+                restored
+            }
+            Err(e) => {
+                warn!(error = %e, "ignoring saved Adam state — starting fresh");
+                Adam::new(model.parameters(), cfg.lr)
+            }
+        }
+    } else {
+        Adam::new(model.parameters(), cfg.lr)
+    };
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
@@ -105,7 +99,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         ($model:expr) => {{
             $model.save_to(&cfg.output)?;
             pos_db.save_to(&db_path)?;
-            save_adam(&adam, &adam_path)?;
+            adam.save_to(&adam_path)?;
             return Ok($model);
         }};
     }
