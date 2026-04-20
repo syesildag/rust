@@ -95,25 +95,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         "starting training"
     );
 
-    macro_rules! save_all {
-        ($model:expr) => {{
-            $model.save_to(&cfg.output)?;
-            pos_db.save_to(&db_path)?;
-            adam.save_to(&adam_path)?;
-            return Ok($model);
-        }};
-    }
-
-    macro_rules! shutdown_if_requested {
-        ($model:expr) => {
-            if shutdown.load(Ordering::SeqCst) {
-                info!("shutdown signal — saving and exiting");
-                save_all!($model);
-            }
-        };
-    }
-
-    for epoch in 1..=cfg.epochs {
+    'training: for epoch in 1..=cfg.epochs {
         let epoch_span = info_span!("epoch", n = epoch, total = cfg.epochs);
         let _epoch_guard = epoch_span.enter();
 
@@ -130,7 +112,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             n_samples += batch.len();
 
             if filtered.is_empty() {
-                shutdown_if_requested!(model);
+                if shutdown.load(Ordering::SeqCst) {
+                    info!("shutdown signal — saving and exiting");
+                    break 'training;
+                }
                 continue;
             }
 
@@ -157,11 +142,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
             }
 
-            shutdown_if_requested!(model);
+            if shutdown.load(Ordering::SeqCst) {
+                info!("shutdown signal — saving and exiting");
+                break 'training;
+            }
         }
 
         info!("epoch {epoch} complete");
     }
 
-    save_all!(model);
+    model.save_to(&cfg.output)?;
+    pos_db.save_to(&db_path)?;
+    adam.save_to(&adam_path)?;
+    Ok(model)
 }
