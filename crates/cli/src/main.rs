@@ -125,34 +125,30 @@ fn cmd_selfplay(args: &[String]) {
         .and_then(|s| s.parse().ok())
         .unwrap_or(10);
 
-    let output_dir: Option<std::path::PathBuf> =
-        flag_value(args, "--output-dir").map(std::path::PathBuf::from);
+    let output_dir = flag_value(args, "--output-dir")
+        .map_or_else(|| PathBuf::from("./selfplay"), PathBuf::from);
 
     let model = load_or_new_model(args);
     let (dataset, pgns) = generate_with_pgn(&model, n);
 
-    if let Some(dir) = &output_dir {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            eprintln!("Failed to create output directory {}: {e}", dir.display());
-            std::process::exit(1);
-        }
-        for (filename, pgn_text) in &pgns {
-            let path = dir.join(filename);
-            if let Err(e) = std::fs::write(&path, pgn_text) {
-                eprintln!("Failed to write {}: {e}", path.display());
-            }
-        }
-        println!(
-            "Self-play complete: {n} games → {} positions  (PGN saved to {})",
-            dataset.len(),
-            dir.display()
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
+        eprintln!(
+            "Failed to create output directory {}: {e}",
+            output_dir.display()
         );
-    } else {
-        println!(
-            "Self-play complete: {n} games → {} positions",
-            dataset.len()
-        );
+        std::process::exit(1);
     }
+    for (filename, pgn_text) in &pgns {
+        let path = output_dir.join(filename);
+        if let Err(e) = std::fs::write(&path, pgn_text) {
+            eprintln!("Failed to write {}: {e}", path.display());
+        }
+    }
+    println!(
+        "Self-play complete: {n} games → {} positions  (PGN saved to {})",
+        dataset.len(),
+        output_dir.display()
+    );
 }
 
 // ─── board display (default) ─────────────────────────────────────────────────

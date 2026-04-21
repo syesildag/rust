@@ -113,10 +113,7 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
     // Derive a stable game ID from the sequence of positions played.
     let game_id = fnv1a(history.iter().flat_map(|b| b.to_fen().into_bytes()));
 
-    let samples = history
-        .into_iter()
-        .map(|b| (b, outcome, game_id))
-        .collect();
+    let samples = history.into_iter().map(|b| (b, outcome, game_id)).collect();
 
     (samples, move_log, outcome, game_id)
 }
