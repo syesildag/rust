@@ -66,7 +66,7 @@ fn cmd_train(args: &[String]) {
             }
             "--lr" => {
                 i += 1;
-                cfg.lr = args[i].parse().unwrap_or(1e-4);
+                cfg.lr = args[i].parse().unwrap_or(1e-5);
             }
             "--output" => {
                 i += 1;
