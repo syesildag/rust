@@ -1,4 +1,5 @@
 //! Minimal PGN parser: extracts game sequences as `(Board, outcome)` pairs.
+//! Also provides PGN serialisation for self-play games.
 //!
 //! Supports Standard Algebraic Notation (SAN) move disambiguation.  Moves that
 //! cannot be parsed or replayed are silently skipped — this makes the parser
@@ -18,6 +19,190 @@ use chess::moves::{Move, MoveKind};
 use chess::piece::PieceKind;
 use chess::square::Square;
 use rayon::prelude::*;
+
+// ─── PGN serialisation ───────────────────────────────────────────────────────
+
+/// Converts a move to Standard Algebraic Notation given the board *before* the
+/// move is played.
+#[must_use]
+pub fn move_to_san(board: &Board, mv: Move) -> String {
+    // Castling
+    if mv.kind == MoveKind::Castling {
+        let base = if mv.to.file() > mv.from.file() {
+            "O-O"
+        } else {
+            "O-O-O"
+        };
+        let after = board.make_move(mv);
+        return format!("{base}{}", check_suffix(&after));
+    }
+
+    let piece = board
+        .piece_at(mv.from)
+        .expect("move must originate from an occupied square");
+    let is_capture =
+        board.piece_at(mv.to).is_some() || mv.kind == MoveKind::EnPassant;
+
+    let mut san = String::new();
+
+    if piece.kind == PieceKind::Pawn {
+        if is_capture {
+            san.push((b'a' + mv.from.file()) as char);
+            san.push('x');
+        }
+        san.push_str(&mv.to.to_string());
+        if let Some(promo) = mv.promotion {
+            san.push('=');
+            san.push(promo.fen_char());
+        }
+    } else {
+        san.push(piece.kind.fen_char());
+
+        // Collect all other legal moves by the same piece type to the same dest.
+        let legal = generate_legal_moves(board);
+        let ambiguous: Vec<Move> = legal
+            .iter()
+            .copied()
+            .filter(|&m| {
+                m != mv
+                    && m.to == mv.to
+                    && board
+                        .piece_at(m.from)
+                        .is_some_and(|p| p.kind == piece.kind && p.color == piece.color)
+            })
+            .collect();
+
+        if !ambiguous.is_empty() {
+            let same_file = ambiguous.iter().any(|m| m.from.file() == mv.from.file());
+            let same_rank = ambiguous.iter().any(|m| m.from.rank() == mv.from.rank());
+            if !same_file {
+                san.push((b'a' + mv.from.file()) as char);
+            } else if !same_rank {
+                san.push((b'1' + mv.from.rank()) as char);
+            } else {
+                san.push_str(&mv.from.to_string());
+            }
+        }
+
+        if is_capture {
+            san.push('x');
+        }
+        san.push_str(&mv.to.to_string());
+    }
+
+    let after = board.make_move(mv);
+    san.push_str(check_suffix(&after));
+    san
+}
+
+/// Returns `"#"` for checkmate, `"+"` for check, or `""` otherwise.
+fn check_suffix(board: &Board) -> &'static str {
+    if board.is_in_check(board.side_to_move) {
+        if generate_legal_moves(board).is_empty() {
+            return "#";
+        }
+        return "+";
+    }
+    ""
+}
+
+/// Encodes a game outcome as a PGN result string.
+#[must_use]
+fn outcome_tag(outcome: f32) -> &'static str {
+    if outcome > 0.5 {
+        "1-0"
+    } else if outcome < -0.5 {
+        "0-1"
+    } else {
+        "1/2-1/2"
+    }
+}
+
+/// Serialises a self-play game as a PGN string.
+///
+/// `moves` is the ordered list of `(board_before, move)` pairs.
+/// `outcome` follows the standard encoding: `1.0` = White wins, `-1.0` = Black
+/// wins, `0.0` = draw.
+/// `game_no` is a 1-based index used in the `Round` header.
+#[must_use]
+pub fn game_to_pgn(moves: &[(Board, Move)], outcome: f32, game_no: usize) -> String {
+    let result_str = outcome_tag(outcome);
+
+    let mut pgn = format!(
+        "[Event \"Self-play\"]\n\
+         [Site \"Local\"]\n\
+         [Round \"{game_no}\"]\n\
+         [White \"Engine\"]\n\
+         [Black \"Engine\"]\n\
+         [Result \"{result_str}\"]\n\n"
+    );
+
+    let mut line_len = 0usize;
+    for (ply, (board, mv)) in moves.iter().enumerate() {
+        // Move number before White's move (ply 0, 2, 4, …)
+        if ply % 2 == 0 {
+            let num = format!("{}. ", ply / 2 + 1);
+            if line_len + num.len() > 76 {
+                pgn.push('\n');
+                line_len = 0;
+            }
+            pgn.push_str(&num);
+            line_len += num.len();
+        }
+        let san = move_to_san(board, *mv);
+        if line_len + san.len() + 1 > 76 {
+            pgn.push('\n');
+            line_len = 0;
+        } else if line_len > 0 {
+            pgn.push(' ');
+            line_len += 1;
+        }
+        pgn.push_str(&san);
+        line_len += san.len();
+    }
+
+    if line_len > 0 {
+        pgn.push(' ');
+    }
+    pgn.push_str(result_str);
+    pgn.push('\n');
+    pgn
+}
+
+/// Derives a chess-themed filename from a `game_id` hash.
+///
+/// Uses two word lists (adjectives + piece names) indexed by different bytes of
+/// the hash, then appends the low 16 bits as hex.  Example: `"dynamic-rook-3fa2"`.
+#[must_use]
+pub fn themed_filename(game_id: u64) -> String {
+    const ADJECTIVES: &[&str] = &[
+        "active", "agile", "alert", "ambitious", "attacking",
+        "balanced", "brave", "brilliant", "calm", "central",
+        "clever", "closed", "committed", "complex", "controlled",
+        "coordinated", "cunning", "daring", "deep", "defensive",
+        "devious", "double-edged", "dynamic", "elegant", "enduring",
+        "energetic", "enterprising", "exact", "fianchettoed", "fiery",
+        "flexible", "forceful", "gambit", "harmonious", "hypermodern",
+        "incisive", "inspiring", "isolated", "keen", "lethal",
+        "logical", "lively", "masterful", "mobile", "nimble",
+        "open", "optimal", "patient", "persistent", "positional",
+        "precise", "prophylactic", "quiet", "radical", "rapid",
+        "resourceful", "restrained", "romantic", "safe", "sharp",
+        "silent", "slow", "solid", "sophisticated", "speculative",
+        "spirited", "steady", "strategic", "strong", "subtle",
+        "swift", "systematic", "tactical", "tenacious", "tricky",
+    ];
+    const PIECES: &[&str] = &[
+        "bishop", "castle", "fianchetto", "gambit", "king",
+        "knight", "outpost", "pawn", "pin", "queen",
+        "rook", "skewer", "tempo", "zugzwang", "zwischenzug",
+    ];
+
+    let adj = ADJECTIVES[((game_id >> 32) as usize) % ADJECTIVES.len()];
+    let piece = PIECES[((game_id >> 16) as usize) % PIECES.len()];
+    let hex = game_id & 0xffff;
+    format!("{adj}-{piece}-{hex:04x}.pgn")
+}
 
 /// A single training sample: board position, game outcome, and game ID.
 ///

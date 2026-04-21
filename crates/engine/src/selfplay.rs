@@ -6,10 +6,12 @@
 
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
+use crate::pgn::{game_to_pgn, themed_filename};
 use crate::position_db::fnv1a;
 use chess::board::Board;
 use chess::game::{game_status, GameStatus};
 use chess::movegen::generate_legal_moves;
+use chess::moves::Move;
 use chess::piece::Color;
 use tracing::{debug, info_span};
 
@@ -19,7 +21,7 @@ pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
     let _span = info_span!("selfplay", total_games = num_games).entered();
     let mut dataset = ChessDataset::new();
     for game_idx in 0..num_games {
-        let samples = play_game(model);
+        let (samples, _moves, _outcome, _game_id) = play_game(model);
         let positions = samples.len();
         dataset.extend(samples);
         debug!(
@@ -32,10 +34,52 @@ pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
     dataset
 }
 
-/// Plays a single game and returns `(board_before_move, outcome, game_id)` for every ply.
-fn play_game(model: &HybridValueNet) -> Vec<(Board, f32, u64)> {
+/// Plays `num_games` greedy games, collects training samples, and returns a
+/// PGN string for every game alongside the dataset.
+///
+/// Each PGN string is paired with a unique themed filename (e.g.
+/// `"dynamic-rook-3fa2.pgn"`).
+#[must_use]
+pub fn generate_with_pgn(
+    model: &HybridValueNet,
+    num_games: usize,
+) -> (ChessDataset, Vec<(String, String)>) {
+    let _span = info_span!("selfplay", total_games = num_games).entered();
+    let mut dataset = ChessDataset::new();
+    let mut pgns: Vec<(String, String)> = Vec::with_capacity(num_games);
+
+    for game_idx in 0..num_games {
+        let (samples, moves, outcome, game_id) = play_game(model);
+        let positions = samples.len();
+        dataset.extend(samples);
+
+        let pgn = game_to_pgn(&moves, outcome, game_idx + 1);
+        let filename = themed_filename(game_id);
+        pgns.push((filename, pgn));
+
+        debug!(
+            game = game_idx + 1,
+            total = num_games,
+            positions,
+            "game complete"
+        );
+    }
+
+    (dataset, pgns)
+}
+
+/// Internal return type for a completed self-play game.
+type PlayedGame = (Vec<(Board, f32, u64)>, Vec<(Board, Move)>, f32, u64);
+
+/// Plays a single game.  Returns:
+/// - training samples `(board_before_move, outcome, game_id)`
+/// - the ordered `(board_before, move)` pairs for PGN serialisation
+/// - the raw outcome value
+/// - the stable game ID
+fn play_game(model: &HybridValueNet) -> PlayedGame {
     let mut board = Board::starting_position();
     let mut history: Vec<Board> = Vec::new();
+    let mut move_log: Vec<(Board, Move)> = Vec::new();
     let max_ply = 400; // prevent infinite games
 
     for _ in 0..max_ply {
@@ -58,6 +102,7 @@ fn play_game(model: &HybridValueNet) -> Vec<(Board, f32, u64)> {
         });
 
         if let Some(mv) = best_move {
+            move_log.push((board.clone(), mv));
             board = board.make_move(mv);
         } else {
             break;
@@ -68,7 +113,12 @@ fn play_game(model: &HybridValueNet) -> Vec<(Board, f32, u64)> {
     // Derive a stable game ID from the sequence of positions played.
     let game_id = fnv1a(history.iter().flat_map(|b| b.to_fen().into_bytes()));
 
-    history.into_iter().map(|b| (b, outcome, game_id)).collect()
+    let samples = history
+        .into_iter()
+        .map(|b| (b, outcome, game_id))
+        .collect();
+
+    (samples, move_log, outcome, game_id)
 }
 
 /// Evaluates a candidate move by running the model on the resulting position,

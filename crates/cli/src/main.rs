@@ -119,18 +119,40 @@ fn cmd_eval(args: &[String]) {
 // ─── selfplay ────────────────────────────────────────────────────────────────
 
 fn cmd_selfplay(args: &[String]) {
-    use engine::selfplay::generate;
+    use engine::selfplay::generate_with_pgn;
 
     let n: usize = flag_value(args, "--games")
         .and_then(|s| s.parse().ok())
         .unwrap_or(10);
 
+    let output_dir: Option<std::path::PathBuf> =
+        flag_value(args, "--output-dir").map(std::path::PathBuf::from);
+
     let model = load_or_new_model(args);
-    let dataset = generate(&model, n);
-    println!(
-        "Self-play complete: {n} games → {} positions",
-        dataset.len()
-    );
+    let (dataset, pgns) = generate_with_pgn(&model, n);
+
+    if let Some(dir) = &output_dir {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!("Failed to create output directory {}: {e}", dir.display());
+            std::process::exit(1);
+        }
+        for (filename, pgn_text) in &pgns {
+            let path = dir.join(filename);
+            if let Err(e) = std::fs::write(&path, pgn_text) {
+                eprintln!("Failed to write {}: {e}", path.display());
+            }
+        }
+        println!(
+            "Self-play complete: {n} games → {} positions  (PGN saved to {})",
+            dataset.len(),
+            dir.display()
+        );
+    } else {
+        println!(
+            "Self-play complete: {n} games → {} positions",
+            dataset.len()
+        );
+    }
 }
 
 // ─── board display (default) ─────────────────────────────────────────────────
@@ -151,7 +173,7 @@ fn cmd_board(args: &[String]) {
         eprintln!(
             "Usage:\n  {} train    [--games FILE…] [--epochs N] [--lr F] [--output FILE]\n  \
              {} eval     [--fen \"FEN\"]\n  \
-             {} selfplay [--games N]\n  \
+             {} selfplay [--games N] [--output-dir DIR]\n  \
              {} [FEN fields…]",
             args[0], args[0], args[0], args[0]
         );
@@ -189,26 +211,13 @@ const DEFAULT_MODEL_PATH: &str = "model.bin";
 /// Loads a saved model from `--model PATH` (or the default `model.bin`) if the
 /// file exists; otherwise returns a fresh randomly-initialised model.
 fn load_or_new_model(args: &[String]) -> engine::HybridValueNet {
+    use engine::persist::Persist;
     let path_str = flag_value(args, "--model").unwrap_or(DEFAULT_MODEL_PATH);
     let path = std::path::Path::new(path_str);
-    if path.exists() {
-        match engine::persist::Persist::load_from(path) {
-            Ok(m) => {
-                println!("Loaded model from {}", path.display());
-                m
-            }
-            Err(e) => {
-                eprintln!("Failed to load model from {}: {e}", path.display());
-                std::process::exit(1);
-            }
-        }
-    } else {
-        println!(
-            "No saved model found at {}; using random weights",
-            path.display()
-        );
-        engine::HybridValueNet::new()
-    }
+    engine::HybridValueNet::load_from(path)
+        .inspect(|_| println!("Loaded model from {}", path.display()))
+        .inspect_err(|_| println!("No saved model at {}; using random weights", path.display()))
+        .unwrap_or_default()
 }
 
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
