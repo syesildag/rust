@@ -27,28 +27,74 @@ use crate::{
 // ── Internal CPU math helpers ──────────────────────────────────────��──────────
 
 /// C = A @ B where A is [m×k] and B is [k×n].
+///
+/// Uses `ikj` loop order for sequential memory access on both B and C rows,
+/// and parallelises over output rows with rayon.
 fn cpu_matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     let mut c = vec![0.0f32; m * n];
-    for i in 0..m {
-        for j in 0..n {
-            let mut s = 0.0f32;
-            for l in 0..k {
-                s += a[i * k + l] * b[l * n + j];
+    c.par_chunks_mut(n).enumerate().for_each(|(i, row)| {
+        for l in 0..k {
+            let a_il = a[i * k + l];
+            for j in 0..n {
+                row[j] += a_il * b[l * n + j];
             }
-            c[i * n + j] = s;
         }
-    }
+    });
     c
 }
 
+/// C = A @ B^T where A is [m×k] and B is [n×k] (B rows are the "right" vectors).
+///
+/// Avoids materialising the transpose: each output element is a row-dot-row product,
+/// giving sequential memory access on both A and B rows.
+fn cpu_matmul_nt(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
+    let mut c = vec![0.0f32; m * n];
+    c.par_chunks_mut(n).enumerate().for_each(|(i, row)| {
+        let a_row = &a[i * k..(i + 1) * k];
+        for j in 0..n {
+            let b_row = &b[j * k..(j + 1) * k];
+            let mut s = 0.0f32;
+            for l in 0..k {
+                s += a_row[l] * b_row[l];
+            }
+            row[j] = s;
+        }
+    });
+    c
+}
+
+/// Metal GPU dispatch has ~50–100 µs of fixed overhead (command encoding, submit,
+/// poll-to-completion, staging buffer map). At fp32 peak ~10 TFLOPs on Apple Silicon
+/// that means ≥ 1 M FLOPs are needed to break even. The old threshold of 8 192 FLOPs
+/// caused the GPU path to be *slower* than CPU for almost every call in practice.
+const GPU_MATMUL_FLOP_THRESHOLD: usize = 1_048_576; // 1 M
+
+/// Element-wise / reduction GPU threshold (bytes rather than FLOPs).
+/// 256 K f32 elements = 1 MiB; below this the rayon CPU path is faster.
+const GPU_EW_ELEM_THRESHOLD: usize = 262_144; // 256 K
+
 /// Dispatching wrapper: uses GPU when the FLOP count justifies transfer overhead.
 fn matmul_2d(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
-    if m * k * n > 8_192 {
+    if m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             return g.matmul(a, b, m, k, n);
         }
     }
     cpu_matmul_2d(a, b, m, k, n)
+}
+
+/// A @ B^T dispatch — avoids materialising the transpose on the CPU path.
+///
+/// For the GPU path the shader still needs a contiguous `[k×n]` layout, so the
+/// transpose is materialised only when a GPU is actually used.
+fn matmul_2d_nt(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
+    if m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
+        if let Some(g) = gpu::global_gpu() {
+            let bt = transpose_2d(b, n, k); // [k×n]
+            return g.matmul(a, &bt, m, k, n);
+        }
+    }
+    cpu_matmul_nt(a, b, m, k, n)
 }
 
 /// Transpose a 2-D matrix [m×n] → [n×m].
@@ -116,7 +162,7 @@ pub fn add(a: &Tensor, b: &Tensor) -> Tensor {
     );
     let ad = a.data();
     let bd = b.data();
-    let data: Vec<f32> = if ad.len() > 4_096 {
+    let data: Vec<f32> = if ad.len() > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             g.elementwise(&ad, &bd, 2)
         } else {
@@ -169,7 +215,7 @@ pub fn sub(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(a.shape(), b.shape());
     let ad = a.data();
     let bd = b.data();
-    let data: Vec<f32> = if ad.len() > 4_096 {
+    let data: Vec<f32> = if ad.len() > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             g.elementwise(&ad, &bd, 3)
         } else {
@@ -237,6 +283,10 @@ pub fn mul_scalar(x: &Tensor, s: f32) -> Tensor {
 struct MatMulBackward {
     a: Tensor,
     b: Tensor,
+    /// A's data saved at forward time — avoids an RwLock read + Vec clone during backward.
+    a_data: Vec<f32>,
+    /// B's data saved at forward time.
+    b_data: Vec<f32>,
     a_shape: Vec<usize>,
     b_shape: Vec<usize>,
 }
@@ -250,14 +300,12 @@ impl GradFn for MatMulBackward {
         let k = self.a_shape[1];
         let n = self.b_shape[1];
         if self.a.requires_grad() {
-            let b_data = self.b.data();
-            let bt = transpose_2d(&b_data, k, n); // [N, K]
+            let bt = transpose_2d(&self.b_data, k, n); // [N, K]
             let da = matmul_2d(g, &bt, m, n, k); // [M,N]@[N,K]=[M,K]
             self.a.accumulate_grad(&da);
         }
         if self.b.requires_grad() {
-            let a_data = self.a.data();
-            let at = transpose_2d(&a_data, m, k); // [K, M]
+            let at = transpose_2d(&self.a_data, m, k); // [K, M]
             let db = matmul_2d(&at, g, k, m, n); // [K,M]@[M,N]=[K,N]
             self.b.accumulate_grad(&db);
         }
@@ -279,7 +327,9 @@ pub fn matmul(a: &Tensor, b: &Tensor) -> Tensor {
         "matmul: inner dims must match: {sa:?} vs {sb:?}"
     );
     let (m, k, n) = (sa[0], sa[1], sb[1]);
-    let data = matmul_2d(&a.data(), &b.data(), m, k, n);
+    let a_data = a.data();
+    let b_data = b.data();
+    let data = matmul_2d(&a_data, &b_data, m, k, n);
     if a.requires_grad() || b.requires_grad() {
         Tensor::from_op(
             data,
@@ -287,6 +337,8 @@ pub fn matmul(a: &Tensor, b: &Tensor) -> Tensor {
             Arc::new(MatMulBackward {
                 a: a.clone(),
                 b: b.clone(),
+                a_data,
+                b_data,
                 a_shape: sa.to_vec(),
                 b_shape: sb.to_vec(),
             }),
@@ -302,6 +354,10 @@ struct LinearBackward {
     input: Tensor,
     weight: Tensor,
     bias: Tensor,
+    /// Input activations saved at forward time — avoids RwLock reads during backward.
+    input_data: Vec<f32>,
+    /// Weight data saved at forward time.
+    weight_data: Vec<f32>,
     in_shape: Vec<usize>,
     w_shape: Vec<usize>,
 }
@@ -317,13 +373,13 @@ impl GradFn for LinearBackward {
         let out_f = self.w_shape[0];
         if self.input.requires_grad() {
             // d_input = g @ weight  ([S,out] @ [out,in] = [S,in])
-            let d = matmul_2d(g, &self.weight.data(), s, out_f, in_f);
+            let d = matmul_2d(g, &self.weight_data, s, out_f, in_f);
             self.input.accumulate_grad(&d);
         }
         if self.weight.requires_grad() {
             // d_weight = g.T @ input  ([out,S] @ [S,in] = [out,in])
             let gt = transpose_2d(g, s, out_f);
-            let d = matmul_2d(&gt, &self.input.data(), out_f, s, in_f);
+            let d = matmul_2d(&gt, &self.input_data, out_f, s, in_f);
             self.weight.accumulate_grad(&d);
         }
         if self.bias.requires_grad() {
@@ -358,13 +414,10 @@ pub fn linear(input: &Tensor, weight: &Tensor, bias: &Tensor) -> Tensor {
     assert_eq!(sw.len(), 2);
     assert_eq!(si[1], sw[1], "linear: feature mismatch");
     let (s, in_f, out_f) = (si[0], si[1], sw[0]);
-    let raw = matmul_2d(
-        &input.data(),
-        &transpose_2d(&weight.data(), out_f, in_f),
-        s,
-        in_f,
-        out_f,
-    );
+    let input_data = input.data();
+    let weight_data = weight.data();
+    // matmul_2d_nt computes input @ weight^T without materialising the transpose on CPU.
+    let raw = matmul_2d_nt(&input_data, &weight_data, s, in_f, out_f);
     let data = add_bias(&raw, &bias.data(), s, out_f);
     let needs_grad = input.requires_grad() || weight.requires_grad() || bias.requires_grad();
     if needs_grad {
@@ -375,6 +428,8 @@ pub fn linear(input: &Tensor, weight: &Tensor, bias: &Tensor) -> Tensor {
                 input: input.clone(),
                 weight: weight.clone(),
                 bias: bias.clone(),
+                input_data,
+                weight_data,
                 in_shape: si.to_vec(),
                 w_shape: sw.to_vec(),
             }),
@@ -413,7 +468,7 @@ impl GradFn for ReluBackward {
 pub fn relu(x: &Tensor) -> Tensor {
     let src = x.data();
     let mask: Vec<bool> = src.iter().map(|&v| v > 0.0).collect();
-    let data: Vec<f32> = if src.len() > 4_096 {
+    let data: Vec<f32> = if src.len() > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             g.elementwise(&src, &[], 0)
         } else {
@@ -485,7 +540,7 @@ impl GradFn for GeluBackward {
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     let src = x.data();
-    let data: Vec<f32> = if src.len() > 4_096 {
+    let data: Vec<f32> = if src.len() > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             g.elementwise(&src, &[], 1)
         } else {
@@ -613,7 +668,7 @@ pub fn softmax(x: &Tensor) -> Tensor {
     let (s, d) = (s_x[0], s_x[1]);
     let src = x.data();
     let mut data = softmax_rows(&src, s, d);
-    if s * d > 2_048 {
+    if s * d > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             data = g.softmax(&src, s, d);
         }
@@ -735,7 +790,7 @@ pub fn layer_norm(x: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) -> Tensor
         }
     }
     // Optionally replace the CPU-computed output with GPU output.
-    if s * d > 2_048 {
+    if s * d > GPU_EW_ELEM_THRESHOLD {
         if let Some(g) = gpu::global_gpu() {
             data = g.layer_norm(&src, &gamma_data, &beta_data, eps, s, d);
         }
@@ -1604,6 +1659,10 @@ pub fn transpose_last_two(x: &Tensor) -> Tensor {
 struct MatMulBatchedBackward {
     a: Tensor,
     b: Tensor,
+    /// A's data saved at forward time.
+    a_data: Vec<f32>,
+    /// B's data saved at forward time.
+    b_data: Vec<f32>,
     batch: usize,
     m: usize,
     k: usize,
@@ -1615,20 +1674,18 @@ impl GradFn for MatMulBatchedBackward {
     }
     fn backward(&self, g: &[f32]) {
         let (batch, m, k, n) = (self.batch, self.m, self.k, self.n);
-        let a_data = self.a.data();
-        let b_data = self.b.data();
         let mut da = vec![0.0f32; batch * m * k];
         let mut db = vec![0.0f32; batch * k * n];
         for bi in 0..batch {
             let g_b = &g[bi * m * n..(bi + 1) * m * n];
             if self.a.requires_grad() {
-                let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
+                let b_b = &self.b_data[bi * k * n..(bi + 1) * k * n];
                 let bt = transpose_2d(b_b, k, n);
                 let d = cpu_matmul_2d(g_b, &bt, m, n, k);
                 da[bi * m * k..(bi + 1) * m * k].copy_from_slice(&d);
             }
             if self.b.requires_grad() {
-                let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
+                let a_b = &self.a_data[bi * m * k..(bi + 1) * m * k];
                 let at = transpose_2d(a_b, m, k);
                 let d = cpu_matmul_2d(&at, g_b, k, m, n);
                 db[bi * k * n..(bi + 1) * k * n].copy_from_slice(&d);
@@ -1664,8 +1721,19 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let (batch, m, k, n) = (sa[0], sa[1], sa[2], sb[2]);
     let a_data = a.data();
     let b_data = b.data();
-    let data = if let Some(g) = gpu::global_gpu() {
-        g.matmul_batched(&a_data, &b_data, batch, m, k, n)
+    let data = if batch * m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
+        if let Some(g) = gpu::global_gpu() {
+            g.matmul_batched(&a_data, &b_data, batch, m, k, n)
+        } else {
+            let mut c = vec![0.0f32; batch * m * n];
+            for bi in 0..batch {
+                let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
+                let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
+                let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
+                c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
+            }
+            c
+        }
     } else {
         let mut c = vec![0.0f32; batch * m * n];
         for bi in 0..batch {
@@ -1683,6 +1751,8 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
             Arc::new(MatMulBatchedBackward {
                 a: a.clone(),
                 b: b.clone(),
+                a_data,
+                b_data,
                 batch,
                 m,
                 k,
