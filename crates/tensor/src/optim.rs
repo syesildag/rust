@@ -6,6 +6,8 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_truncation)]
 
+use tracing::info;
+
 use crate::Tensor;
 
 /// Adam optimizer with β₁=0.9, β₂=0.999, ε=1e-8.
@@ -92,6 +94,7 @@ impl Adam {
             .sum();
         let norm = total_sq.sqrt();
         if norm.is_finite() && norm > max_norm {
+            info!(norm, max_norm, "clipping gradients with global norm above threshold");
             let scale = max_norm / norm;
             for p in &self.params {
                 let clipped: Vec<f32> = p.grad().iter().map(|g| g * scale).collect();
