@@ -10,6 +10,10 @@ use tracing::trace;
 
 use crate::Tensor;
 
+const BETA1: f32 = 0.9;
+const BETA2: f32 = 0.999;
+const EPS: f32 = 1e-8;
+
 /// Adam optimizer with β₁=0.9, β₂=0.999, ε=1e-8.
 ///
 /// Maintains per-parameter first and second moment estimates that adapt the
@@ -44,9 +48,9 @@ impl Adam {
         Self {
             params,
             lr,
-            beta1: 0.9,
-            beta2: 0.999,
-            eps: 1e-8,
+            beta1: BETA1,
+            beta2: BETA2,
+            eps: EPS,
             m,
             v,
             t: 0,
@@ -127,9 +131,9 @@ impl Adam {
         Self {
             params: vec![],
             lr: 0.0,
-            beta1: 0.9,
-            beta2: 0.999,
-            eps: 1e-8,
+            beta1: BETA1,
+            beta2: BETA2,
+            eps: EPS,
             m,
             v,
             t,
