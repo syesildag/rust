@@ -125,8 +125,8 @@ fn cmd_selfplay(args: &[String]) {
         .and_then(|s| s.parse().ok())
         .unwrap_or(10);
 
-    let output_dir = flag_value(args, "--output-dir")
-        .map_or_else(|| PathBuf::from("./selfplay"), PathBuf::from);
+    let output_dir =
+        flag_value(args, "--output-dir").map_or_else(|| PathBuf::from("./selfplay"), PathBuf::from);
 
     let model = load_or_new_model(args);
     let (dataset, pgns) = generate_with_pgn(&model, n);
