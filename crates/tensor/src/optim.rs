@@ -6,7 +6,7 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_truncation)]
 
-use tracing::{warn};
+use tracing::trace;
 
 use crate::Tensor;
 
@@ -94,7 +94,7 @@ impl Adam {
             .sum();
         let norm = total_sq.sqrt();
         if norm.is_finite() && norm > max_norm {
-            warn!(n=norm, mn=max_norm, "clipping");
+            trace!(n = norm, mn = max_norm, "clipping");
             let scale = max_norm / norm;
             for p in &self.params {
                 let clipped: Vec<f32> = p.grad().iter().map(|g| g * scale).collect();
@@ -124,7 +124,16 @@ impl Adam {
     /// Intended for use by `Persist::read_from` implementations — apply with [`Self::restore_state_from`].
     #[must_use]
     pub fn from_state(t: usize, m: Vec<Vec<f32>>, v: Vec<Vec<f32>>) -> Self {
-        Self { params: vec![], lr: 0.0, beta1: 0.9, beta2: 0.999, eps: 1e-8, m, v, t }
+        Self {
+            params: vec![],
+            lr: 0.0,
+            beta1: 0.9,
+            beta2: 0.999,
+            eps: 1e-8,
+            m,
+            v,
+            t,
+        }
     }
 
     /// Attaches live model parameters and learning rate to a state-only shell, consuming it.
@@ -158,7 +167,10 @@ impl Adam {
         }
         // Reject corrupted state: a non-finite moment value would immediately
         // produce NaN weights on the first optimizer step.
-        let moments_ok = self.m.iter().chain(self.v.iter())
+        let moments_ok = self
+            .m
+            .iter()
+            .chain(self.v.iter())
             .all(|slot| slot.iter().all(|v| v.is_finite()));
         if !moments_ok {
             return Err(std::io::Error::new(

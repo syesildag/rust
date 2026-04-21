@@ -104,7 +104,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         let mut n_samples = 0usize;
 
         for batch in dataset.batches(cfg.batch_size) {
-
             if shutdown.load(Ordering::SeqCst) {
                 info!("shutdown signal received — saving progress and exiting…");
                 break 'training;
@@ -152,8 +151,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             for (board, _, game_id) in &filtered {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
             }
-
-
         }
 
         info!("epoch {epoch} complete");
