@@ -6,7 +6,7 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_truncation)]
 
-use tracing::info;
+use tracing::{warn};
 
 use crate::Tensor;
 
@@ -94,7 +94,7 @@ impl Adam {
             .sum();
         let norm = total_sq.sqrt();
         if norm.is_finite() && norm > max_norm {
-            info!(norm, max_norm, "clipping");
+            warn!(n=norm, mn=max_norm, "clipping");
             let scale = max_norm / norm;
             for p in &self.params {
                 let clipped: Vec<f32> = p.grad().iter().map(|g| g * scale).collect();

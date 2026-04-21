@@ -283,7 +283,7 @@ pub fn mul_scalar(x: &Tensor, s: f32) -> Tensor {
 struct MatMulBackward {
     a: Tensor,
     b: Tensor,
-    /// A's data saved at forward time — avoids an RwLock read + Vec clone during backward.
+    /// A's data saved at forward time — avoids an `RwLock` read + Vec clone during backward.
     a_data: Vec<f32>,
     /// B's data saved at forward time.
     b_data: Vec<f32>,
@@ -354,7 +354,7 @@ struct LinearBackward {
     input: Tensor,
     weight: Tensor,
     bias: Tensor,
-    /// Input activations saved at forward time — avoids RwLock reads during backward.
+    /// Input activations saved at forward time — avoids `RwLock` reads during backward.
     input_data: Vec<f32>,
     /// Weight data saved at forward time.
     weight_data: Vec<f32>,
