@@ -51,7 +51,10 @@ impl Default for TrainConfig {
 /// # Errors
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
-    let model = HybridValueNet::new();
+    let model = HybridValueNet::load_from(&cfg.output)
+        .inspect(|_| info!(path = %cfg.output.display(), "restored model weights"))
+        .inspect_err(|e| warn!(error = %e, "ignoring saved model — starting fresh"))
+        .unwrap_or_default();
     let mut dataset = ChessDataset::load_with_cache(&cfg.pgn_paths);
 
     if dataset.is_empty() {
@@ -62,23 +65,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     }
 
     let db_path = cfg.output.with_extension("pos");
-    let mut pos_db = PositionDb::load_from(&db_path).unwrap_or_default();
+    let mut pos_db = PositionDb::load_from(&db_path)
+        .inspect(|_| info!(path = %db_path.display(), "restored position db"))
+        .inspect_err(|e| warn!(error = %e, "ignoring saved position db — starting fresh"))
+        .unwrap_or_default();
 
     let adam_path = cfg.output.with_extension("adam");
-    let mut adam = if let Ok(saved) = Adam::load_from(&adam_path) {
-        match saved.with_params(model.parameters(), cfg.lr) {
-            Ok(restored) => {
-                info!(path = %adam_path.display(), "restored Adam optimizer state");
-                restored
-            }
-            Err(e) => {
-                warn!(error = %e, "ignoring saved Adam state — starting fresh");
-                Adam::new(model.parameters(), cfg.lr)
-            }
-        }
-    } else {
-        Adam::new(model.parameters(), cfg.lr)
-    };
+    let mut adam = Adam::load_from(&adam_path)
+        .and_then(|saved| saved.with_params(model.parameters(), cfg.lr))
+        .inspect(|_| info!(path = %adam_path.display(), "restored Adam optimizer state"))
+        .inspect_err(|e| warn!(error = %e, "ignoring saved Adam state — starting fresh"))
+        .unwrap_or_else(|_| Adam::new(model.parameters(), cfg.lr));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
