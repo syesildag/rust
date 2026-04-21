@@ -13,7 +13,7 @@
 use std::sync::{Arc, OnceLock};
 
 use bytemuck::cast_slice;
-use tracing::debug;
+use tracing::trace;
 use wgpu::util::DeviceExt;
 
 // ── global singleton ──────────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ impl GpuContext {
         n: usize,
     ) -> Vec<f32> {
         // Instrumentation: debug log dispatch sizes for GPU utilization analysis
-        debug!(
+        trace!(
             "[tensor] dispatch_workgroups: wgx={}, wgy={}, wgz={}, total={} (n={})",
             wgx,
             wgy,
