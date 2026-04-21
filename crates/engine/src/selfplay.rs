@@ -6,7 +6,7 @@
 
 use crate::dataset::ChessDataset;
 use crate::model::HybridValueNet;
-use crate::pgn::{game_to_pgn, themed_filename};
+use crate::pgn::{game_to_pgn, move_to_san, themed_filename};
 use crate::position_db::fnv1a;
 use chess::board::Board;
 use chess::game::{game_status, GameStatus};
@@ -88,8 +88,6 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
             _ => break,
         }
 
-        debug!(board = %format!("\n{board}"));
-
         history.push(board.clone());
 
         let legal = generate_legal_moves(&board);
@@ -105,8 +103,10 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
         });
 
         if let Some(mv) = best_move {
+            let san = move_to_san(&board, mv);
             move_log.push((board.clone(), mv));
             board = board.make_move(mv);
+            debug!(mv = %san, board = %format!("\n{board}"));
         } else {
             break;
         }
