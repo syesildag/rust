@@ -87,6 +87,9 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
             GameStatus::Ongoing => {}
             _ => break,
         }
+
+        debug!(board = %format!("\n{board}"));
+
         history.push(board.clone());
 
         let legal = generate_legal_moves(&board);
