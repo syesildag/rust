@@ -9,6 +9,8 @@ pub enum DrawReason {
     FiftyMoveRule,
     /// Neither side has enough material to deliver checkmate (kings only, or with one minor piece).
     InsufficientMaterial,
+    /// The same position has occurred three times.
+    ThreefoldRepetition,
 }
 
 /// The current status of the game.
@@ -24,10 +26,36 @@ pub enum GameStatus {
     Draw(DrawReason),
 }
 
+/// Returns `true` when `a` and `b` represent the same chess position for the
+/// purposes of repetition detection (pieces, side to move, castling rights, and
+/// en-passant square; ignores clocks).
+fn same_position(a: &Board, b: &Board) -> bool {
+    a.pieces == b.pieces
+        && a.side_to_move == b.side_to_move
+        && a.castling == b.castling
+        && a.en_passant == b.en_passant
+}
+
+/// Like [`game_status`] but also detects threefold repetition.
+///
+/// `history` should contain the sequence of board positions that were reached
+/// *before* each move was played (i.e. the positions already seen).  If the
+/// current position matches two or more entries in `history` the function
+/// returns [`GameStatus::Draw(DrawReason::ThreefoldRepetition)`].
+#[must_use]
+pub fn game_status_with_history(board: &Board, history: &[Board]) -> GameStatus {
+    let repetitions = history.iter().filter(|b| same_position(b, board)).count();
+    if repetitions >= 2 {
+        return GameStatus::Draw(DrawReason::ThreefoldRepetition);
+    }
+    game_status(board)
+}
+
 /// Determines the current game status for the side to move.
 ///
 /// Note: threefold repetition is **not** detected; callers that need it must
-/// track position history themselves.
+/// track position history themselves.  Use [`game_status_with_history`] when a
+/// history is available.
 #[must_use]
 pub fn game_status(board: &Board) -> GameStatus {
     if board.halfmove_clock >= 100 {
@@ -147,5 +175,23 @@ mod tests {
             game_status(&b),
             GameStatus::Draw(DrawReason::InsufficientMaterial)
         );
+    }
+
+    #[test]
+    fn threefold_repetition_draw() {
+        let b = Board::starting_position();
+        // Two prior occurrences of the same position in history → draw on third.
+        let history = vec![b.clone(), b.clone()];
+        assert_eq!(
+            game_status_with_history(&b, &history),
+            GameStatus::Draw(DrawReason::ThreefoldRepetition)
+        );
+    }
+
+    #[test]
+    fn no_repetition_without_history() {
+        let b = Board::starting_position();
+        let history = vec![b.clone()]; // only one prior occurrence
+        assert_eq!(game_status_with_history(&b, &history), GameStatus::Ongoing);
     }
 }

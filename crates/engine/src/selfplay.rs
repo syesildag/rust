@@ -9,7 +9,7 @@ use crate::model::HybridValueNet;
 use crate::pgn::{game_to_pgn, move_to_san, themed_filename};
 use crate::position_db::fnv1a;
 use chess::board::Board;
-use chess::game::{game_status, GameStatus};
+use chess::game::{game_status, game_status_with_history, GameStatus};
 use chess::movegen::generate_legal_moves;
 use chess::moves::Move;
 use chess::piece::Color;
@@ -83,7 +83,7 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
     let max_ply = 400; // prevent infinite games
 
     for _ in 0..max_ply {
-        match game_status(&board) {
+        match game_status_with_history(&board, &history) {
             GameStatus::Ongoing => {}
             _ => break,
         }
