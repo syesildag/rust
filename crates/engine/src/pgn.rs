@@ -140,10 +140,15 @@ pub fn game_to_pgn(moves: &[(Board, Move)], outcome: f32, game_no: usize) -> Str
     for (ply, (board, mv)) in moves.iter().enumerate() {
         // Move number before White's move (ply 0, 2, 4, …)
         if ply % 2 == 0 {
-            let num = format!("{}. ", ply / 2 + 1);
-            if line_len + num.len() > 76 {
-                pgn.push('\n');
-                line_len = 0;
+            let num = format!("{}.", ply / 2 + 1);
+            if line_len > 0 {
+                if line_len + 1 + num.len() > 76 {
+                    pgn.push('\n');
+                    line_len = 0;
+                } else {
+                    pgn.push(' ');
+                    line_len += 1;
+                }
             }
             pgn.push_str(&num);
             line_len += num.len();
