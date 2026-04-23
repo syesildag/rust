@@ -1823,6 +1823,227 @@ pub fn slice_batch(x: &Tensor, idx: usize) -> Tensor {
     }
 }
 
+// ── prepend_cls_batched ───────────────────────────────────────────────────────
+
+struct PrependClsBatchedBackward {
+    cls: Tensor,
+    x: Tensor,
+    b: usize,
+    s: usize,
+    d: usize,
+}
+impl GradFn for PrependClsBatchedBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.cls.clone(), self.x.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        let (b, s, d) = (self.b, self.s, self.d);
+        // grad_cls: sum over B of the first D elements of each (S+1)*D chunk.
+        if self.cls.requires_grad() {
+            let mut d_cls = vec![0.0f32; d];
+            for bi in 0..b {
+                for j in 0..d {
+                    d_cls[j] += g[bi * (s + 1) * d + j];
+                }
+            }
+            self.cls.accumulate_grad(&d_cls);
+        }
+        // grad_x: elements after the first D of each (S+1)*D chunk.
+        if self.x.requires_grad() {
+            let mut d_x = vec![0.0f32; b * s * d];
+            for bi in 0..b {
+                let src = &g[bi * (s + 1) * d + d..(bi + 1) * (s + 1) * d];
+                d_x[bi * s * d..(bi + 1) * s * d].copy_from_slice(src);
+            }
+            self.x.accumulate_grad(&d_x);
+        }
+    }
+}
+
+/// Prepends a CLS token to every sequence in a batch.
+///
+/// - `cls`: `[1, D]` — the learnable CLS token.
+/// - `x`:   `[B, S, D]` — the batch of `S`-length sequences.
+/// - Output: `[B, S+1, D]` — CLS prepended at position 0 for every item.
+///
+/// No per-item loop: the output is filled with a single parallel pass over batch items.
+///
+/// # Panics
+/// Panics if `cls` is not `[1, D]` or `x` is not `[B, S, D]`, or their `D` dims differ.
+#[must_use]
+pub fn prepend_cls_batched(cls: &Tensor, x: &Tensor) -> Tensor {
+    let sc = cls.shape();
+    let sx = x.shape();
+    assert_eq!(sc.len(), 2, "prepend_cls_batched: cls must be 2-D [1, D]");
+    assert_eq!(sx.len(), 3, "prepend_cls_batched: x must be 3-D [B, S, D]");
+    assert_eq!(sc[0], 1, "prepend_cls_batched: cls first dim must be 1");
+    assert_eq!(sc[1], sx[2], "prepend_cls_batched: cls D must equal x D");
+    let (b, s, d) = (sx[0], sx[1], sx[2]);
+    let cls_data = cls.data();
+    let x_data = x.data();
+    let mut data = vec![0.0f32; b * (s + 1) * d];
+    data.par_chunks_mut((s + 1) * d)
+        .enumerate()
+        .for_each(|(bi, chunk)| {
+            chunk[..d].copy_from_slice(&cls_data);
+            chunk[d..].copy_from_slice(&x_data[bi * s * d..(bi + 1) * s * d]);
+        });
+    if cls.requires_grad() || x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &[b, s + 1, d],
+            Arc::new(PrependClsBatchedBackward {
+                cls: cls.clone(),
+                x: x.clone(),
+                b,
+                s,
+                d,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &[b, s + 1, d])
+    }
+}
+
+// ── broadcast_add_batch ───────────────────────────────────────────────────────
+
+struct BroadcastAddBatchBackward {
+    x: Tensor,
+    y: Tensor,
+    b: usize,
+    s: usize,
+    d: usize,
+}
+impl GradFn for BroadcastAddBatchBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.x.clone(), self.y.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        let (b, s, d) = (self.b, self.s, self.d);
+        // grad_x = grad_out (same shape).
+        if self.x.requires_grad() {
+            self.x.accumulate_grad(g);
+        }
+        // grad_y = sum over B of grad_out → shape [S, D].
+        if self.y.requires_grad() {
+            let mut d_y = vec![0.0f32; s * d];
+            for bi in 0..b {
+                for i in 0..s * d {
+                    d_y[i] += g[bi * s * d + i];
+                }
+            }
+            self.y.accumulate_grad(&d_y);
+        }
+    }
+}
+
+/// Adds a `[S, D]` tensor to every item in a `[B, S, D]` batch (broadcast over B).
+///
+/// Equivalent to `x[b] + y` for each `b`, but fully vectorised with a single
+/// parallel pass — no per-item loop.
+///
+/// # Panics
+/// Panics if `x` is not `[B, S, D]` or `y` is not `[S, D]`, or `S`/`D` differ.
+#[must_use]
+pub fn broadcast_add_batch(x: &Tensor, y: &Tensor) -> Tensor {
+    let sx = x.shape();
+    let sy = y.shape();
+    assert_eq!(sx.len(), 3, "broadcast_add_batch: x must be 3-D [B, S, D]");
+    assert_eq!(sy.len(), 2, "broadcast_add_batch: y must be 2-D [S, D]");
+    assert_eq!(sx[1], sy[0], "broadcast_add_batch: S mismatch");
+    assert_eq!(sx[2], sy[1], "broadcast_add_batch: D mismatch");
+    let (b, s, d) = (sx[0], sx[1], sx[2]);
+    let x_data = x.data();
+    let y_data = y.data();
+    let mut data = vec![0.0f32; b * s * d];
+    data.par_chunks_mut(s * d)
+        .enumerate()
+        .for_each(|(bi, chunk)| {
+            let x_item = &x_data[bi * s * d..(bi + 1) * s * d];
+            for i in 0..s * d {
+                chunk[i] = x_item[i] + y_data[i];
+            }
+        });
+    if x.requires_grad() || y.requires_grad() {
+        Tensor::from_op(
+            data,
+            &[b, s, d],
+            Arc::new(BroadcastAddBatchBackward {
+                x: x.clone(),
+                y: y.clone(),
+                b,
+                s,
+                d,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &[b, s, d])
+    }
+}
+
+// ── select_token ──────────────────────────────────────────────────────────────
+
+struct SelectTokenBackward {
+    input: Tensor,
+    b: usize,
+    s: usize,
+    d: usize,
+    idx: usize,
+}
+impl GradFn for SelectTokenBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let (b, s, d, idx) = (self.b, self.s, self.d, self.idx);
+            let mut d_x = vec![0.0f32; b * s * d];
+            for bi in 0..b {
+                let src = &g[bi * d..(bi + 1) * d];
+                let dst = &mut d_x[bi * s * d + idx * d..bi * s * d + (idx + 1) * d];
+                dst.copy_from_slice(src);
+            }
+            self.input.accumulate_grad(&d_x);
+        }
+    }
+}
+
+/// Extracts one token from every sequence in a `[B, S, D]` batch.
+///
+/// Returns `[B, D]`: `output[b] = x[b, idx, :]`.
+///
+/// Fully vectorised — no per-item loop.
+///
+/// # Panics
+/// Panics if `x` is not 3-D or `idx` is out of bounds.
+#[must_use]
+pub fn select_token(x: &Tensor, idx: usize) -> Tensor {
+    let s = x.shape();
+    assert_eq!(s.len(), 3, "select_token: x must be 3-D [B, S, D]");
+    let (b, seq, d) = (s[0], s[1], s[2]);
+    assert!(idx < seq, "select_token: idx {idx} out of bounds for S={seq}");
+    let x_data = x.data();
+    let mut data = vec![0.0f32; b * d];
+    data.par_chunks_mut(d).enumerate().for_each(|(bi, chunk)| {
+        chunk.copy_from_slice(&x_data[bi * seq * d + idx * d..bi * seq * d + (idx + 1) * d]);
+    });
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &[b, d],
+            Arc::new(SelectTokenBackward {
+                input: x.clone(),
+                b,
+                s: seq,
+                d,
+                idx,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &[b, d])
+    }
+}
+
 // ── mse_loss_tensor ───────────────────────────────────────────────────────────
 
 struct MseLossTensorBackward {

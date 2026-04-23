@@ -118,41 +118,33 @@ impl HybridValueNet {
     /// Evaluates a batch of board positions.
     ///
     /// Returns `[B, 1]` with values ∈ (-1, +1).
-    /// The CNN backbone processes all boards simultaneously; the transformer is applied
-    /// per item so that the existing single-sequence attention code requires no change.
+    /// All sequence construction (CLS prepend, positional embeddings) and CLS
+    /// extraction are fully vectorised — no per-item loops.
     #[must_use]
     pub fn forward_batch(&self, boards: &[Board]) -> Tensor {
         let _span = trace_span!("HybridValueNet::forward_batch").entered();
         let b = boards.len();
 
-        // 1. Encode all boards → [B, 17, 8, 8]
+        // 1. Encode all boards → [B, 18, 8, 8]
         let x = encode_boards(boards);
 
         // 2. CNN backbone → [B, 256, 8, 8]
         let x = self.backbone.forward(&x);
 
-        // 3. Build [B, 65, 256]: prepend CLS token + add positional embeddings per item.
-        let mut seqs: Vec<Tensor> = Vec::with_capacity(b);
-        for i in 0..b {
-            let xi = ops::slice_batch(&x, i).reshape(&[64, D_MODEL]); // [64, 256]
-            let xi = ops::cat(&[&self.cls_token, &xi]); // [65, 256]
-            seqs.push(ops::add(&xi, &self.pos_embed));
-        }
-        let seq_refs: Vec<&Tensor> = seqs.iter().collect();
-        let x = ops::stack(&seq_refs); // [B, 65, 256]
+        // 3. Reshape → [B, 64, 256]: each spatial position becomes one token.
+        let x = x.reshape(&[b, 64, D_MODEL]);
 
-        // 4. Batched transformer → [B, 65, 256]
+        // 4. Prepend CLS → [B, 65, 256], then broadcast-add positional embeddings.
+        let x = ops::prepend_cls_batched(&self.cls_token, &x);
+        let x = ops::broadcast_add_batch(&x, &self.pos_embed);
+
+        // 5. Batched transformer → [B, 65, 256]
         let x = self.encoder.forward_batched(&x, b);
 
-        // 5. Extract CLS (row 0) per item → stack → [B, 256]
-        let mut cls_outputs: Vec<Tensor> = Vec::with_capacity(b);
-        for i in 0..b {
-            cls_outputs.push(ops::select_row(&ops::slice_batch(&x, i), 0));
-        }
-        let cls_refs: Vec<&Tensor> = cls_outputs.iter().collect();
-        let x = ops::cat(&cls_refs); // [B, 256]
+        // 6. Extract CLS token (position 0) from every item → [B, 256]
+        let x = ops::select_token(&x, 0);
 
-        // 6. Project → [B, 1], tanh → [B, 1]
+        // 7. Project → [B, 1], tanh → [B, 1]
         ops::tanh(&self.head.forward(&x))
     }
 
