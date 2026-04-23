@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
@@ -1883,6 +1884,59 @@ pub fn mse_loss_tensor(pred: &Tensor, target: &Tensor) -> Tensor {
         Tensor::from_vec(vec![loss], &[1])
     }
 }
+
+// ── dropout ───────────────────────────────────────────────────────────────────
+
+struct DropoutBackward {
+    input: Tensor,
+    mask: Vec<f32>,
+}
+impl GradFn for DropoutBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let d: Vec<f32> = g.iter().zip(self.mask.iter()).map(|(gv, m)| gv * m).collect();
+            self.input.accumulate_grad(&d);
+        }
+    }
+}
+
+/// Applies inverted dropout to `x` during training.
+///
+/// - When `training` is `false` (or `p == 0.0`), returns `x` unchanged.
+/// - When training, each element is independently zeroed with probability `p`
+///   and scaled by `1 / (1 - p)` to preserve expected activation magnitude
+///   (inverted / "corrected" dropout).
+///
+/// Output shape equals input shape.
+#[must_use]
+pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
+    if !training || p == 0.0 {
+        return x.clone();
+    }
+    let scale = 1.0 / (1.0 - p);
+    let mut rng = rand::thread_rng();
+    let mask: Vec<f32> = x.data().iter().map(|_| {
+        if rng.gen::<f32>() < p { 0.0 } else { scale }
+    }).collect();
+    let data: Vec<f32> = x.data().iter().zip(mask.iter()).map(|(v, m)| v * m).collect();
+    let shape = x.shape().to_vec();
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &shape,
+            Arc::new(DropoutBackward {
+                input: x.clone(),
+                mask,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &shape)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

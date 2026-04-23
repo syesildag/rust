@@ -3,7 +3,7 @@
 //! ## Data flow
 //! ```text
 //! Board
-//!   → encode()          [1, 17, 8, 8]
+//!   → encode()          [1, 18, 8, 8]
 //!   → ResNetBackbone    [1, 256, 8, 8]
 //!   → reshape           [64, 256]       (each square = one token)
 //!   → prepend CLS       [65, 256]
@@ -41,9 +41,11 @@ const D_MODEL: usize = 256;
 const NUM_HEADS: usize = 8;
 const D_FF: usize = 1024;
 const NUM_BLOCKS: usize = 4;
-const IN_CHANNELS: usize = 17;
+const IN_CHANNELS: usize = 18;
 const CHANNELS: usize = 256;
 const NUM_RES: usize = 8;
+/// Dropout probability applied in each transformer block.
+const DROPOUT: f32 = 0.1;
 /// Sequence length = 64 squares + 1 CLS token.
 const SEQ_LEN: usize = 65;
 
@@ -71,9 +73,16 @@ impl HybridValueNet {
             backbone: ResNetBackbone::new(IN_CHANNELS, CHANNELS, NUM_RES),
             cls_token: Tensor::randn(&[1, D_MODEL], 0.02).with_grad(),
             pos_embed: Tensor::randn(&[SEQ_LEN, D_MODEL], 0.02).with_grad(),
-            encoder: TransformerEncoder::new(NUM_BLOCKS, D_MODEL, NUM_HEADS, D_FF),
+            encoder: TransformerEncoder::new(NUM_BLOCKS, D_MODEL, NUM_HEADS, D_FF, DROPOUT),
             head: Linear::new(D_MODEL, 1, true),
         }
+    }
+
+    /// Switches between training (`true`) and inference (`false`) mode.
+    ///
+    /// Must be set to `false` during self-play and evaluation to disable dropout.
+    pub fn set_training(&self, training: bool) {
+        self.encoder.set_training(training);
     }
 
     /// Evaluates a board position.
@@ -82,7 +91,7 @@ impl HybridValueNet {
     #[must_use]
     pub fn forward(&self, board: &Board) -> Tensor {
         let _span = trace_span!("HybridValueNet::forward").entered();
-        // 1. Encode → [1, 17, 8, 8]
+        // 1. Encode → [1, 18, 8, 8]
         let x = encode_batch(board);
 
         // 2. CNN backbone → [1, 256, 8, 8]

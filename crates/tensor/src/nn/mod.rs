@@ -7,6 +7,7 @@
 pub mod attention;
 pub mod batch_norm;
 pub mod conv2d;
+pub mod dropout;
 pub mod layer_norm;
 pub mod linear;
 pub mod transformer;
@@ -14,6 +15,7 @@ pub mod transformer;
 pub use attention::MultiHeadAttention;
 pub use batch_norm::BatchNorm2d;
 pub use conv2d::Conv2d;
+pub use dropout::Dropout;
 pub use layer_norm::LayerNorm;
 pub use linear::Linear;
 pub use transformer::{TransformerBlock, TransformerEncoder};

@@ -19,6 +19,7 @@ use tracing::{debug, info_span};
 #[must_use]
 pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
     let _span = info_span!("selfplay", total_games = num_games).entered();
+    model.set_training(false);
     let mut dataset = ChessDataset::new();
     for game_idx in 0..num_games {
         let (samples, _moves, _outcome, _game_id) = play_game(model);
@@ -31,6 +32,7 @@ pub fn generate(model: &HybridValueNet, num_games: usize) -> ChessDataset {
             "game complete"
         );
     }
+    model.set_training(true);
     dataset
 }
 
@@ -45,6 +47,7 @@ pub fn generate_with_pgn(
     num_games: usize,
 ) -> (ChessDataset, Vec<(String, String)>) {
     let _span = info_span!("selfplay", total_games = num_games).entered();
+    model.set_training(false);
     let mut dataset = ChessDataset::new();
     let mut pgns: Vec<(String, String)> = Vec::with_capacity(num_games);
 
@@ -64,7 +67,7 @@ pub fn generate_with_pgn(
             "game complete"
         );
     }
-
+    model.set_training(true);
     (dataset, pgns)
 }
 
