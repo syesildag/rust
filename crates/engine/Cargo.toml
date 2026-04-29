@@ -10,5 +10,5 @@ workspace = true
 chess   = { path = "../chess" }
 tensor  = { path = "../tensor" }
 tracing.workspace = true
-ctrlc   = "3"
+tokio   = { version = "1", features = ["rt", "signal"] }
 rayon.workspace = true

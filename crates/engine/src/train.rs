@@ -79,11 +79,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
-    if let Err(e) = ctrlc::set_handler(move || {
-        shutdown_flag.store(true, Ordering::SeqCst);
-    }) {
-        warn!(error = %e, "could not register signal handler — graceful shutdown unavailable");
-    }
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .expect("tokio signal runtime");
+        rt.block_on(async {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                shutdown_flag.store(true, Ordering::SeqCst);
+            }
+        });
+    });
 
     info!(
         positions = dataset.len(),
