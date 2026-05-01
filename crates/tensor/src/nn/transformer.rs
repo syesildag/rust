@@ -53,7 +53,9 @@ impl TransformerBlock {
         let attn_out = self.dropout1.forward(&self.attn.forward(x));
         let x = self.norm1.forward(&ops::add(x, &attn_out));
         // Feed-forward sub-layer: dropout → residual → norm.
-        let ff_out = self.dropout2.forward(&self.ff2.forward(&ops::gelu(&self.ff1.forward(&x))));
+        let ff_out = self
+            .dropout2
+            .forward(&self.ff2.forward(&ops::gelu(&self.ff1.forward(&x))));
         self.norm2.forward(&ops::add(&x, &ff_out))
     }
 
@@ -73,14 +75,12 @@ impl TransformerBlock {
 
         // FFN sub-layer: dropout → residual → layer norm.
         let x_2d = x.reshape(&[batch * seq, d_model]);
-        let ff_out = self
-            .dropout2
-            .forward(
-                &self
-                    .ff2
-                    .forward(&ops::gelu(&self.ff1.forward(&x_2d)))
-                    .reshape(&[batch, seq, d_model]),
-            );
+        let ff_out = self.dropout2.forward(
+            &self
+                .ff2
+                .forward(&ops::gelu(&self.ff1.forward(&x_2d)))
+                .reshape(&[batch, seq, d_model]),
+        );
         let x_res2 = ops::add(&x, &ff_out);
         self.norm2
             .forward(&x_res2.reshape(&[batch * seq, d_model]))
@@ -109,7 +109,13 @@ impl TransformerEncoder {
     ///
     /// `dropout` is passed through to each [`TransformerBlock`].
     #[must_use]
-    pub fn new(num_layers: usize, d_model: usize, num_heads: usize, d_ff: usize, dropout: f32) -> Self {
+    pub fn new(
+        num_layers: usize,
+        d_model: usize,
+        num_heads: usize,
+        d_ff: usize,
+        dropout: f32,
+    ) -> Self {
         let blocks = (0..num_layers)
             .map(|_| TransformerBlock::new(d_model, num_heads, d_ff, dropout))
             .collect();

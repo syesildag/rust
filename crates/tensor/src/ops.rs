@@ -2021,7 +2021,10 @@ pub fn select_token(x: &Tensor, idx: usize) -> Tensor {
     let s = x.shape();
     assert_eq!(s.len(), 3, "select_token: x must be 3-D [B, S, D]");
     let (b, seq, d) = (s[0], s[1], s[2]);
-    assert!(idx < seq, "select_token: idx {idx} out of bounds for S={seq}");
+    assert!(
+        idx < seq,
+        "select_token: idx {idx} out of bounds for S={seq}"
+    );
     let x_data = x.data();
     let mut data = vec![0.0f32; b * d];
     data.par_chunks_mut(d).enumerate().for_each(|(bi, chunk)| {
@@ -2118,7 +2121,11 @@ impl GradFn for DropoutBackward {
     }
     fn backward(&self, g: &[f32]) {
         if self.input.requires_grad() {
-            let d: Vec<f32> = g.iter().zip(self.mask.iter()).map(|(gv, m)| gv * m).collect();
+            let d: Vec<f32> = g
+                .iter()
+                .zip(self.mask.iter())
+                .map(|(gv, m)| gv * m)
+                .collect();
             self.input.accumulate_grad(&d);
         }
     }
@@ -2139,10 +2146,17 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     }
     let scale = 1.0 / (1.0 - p);
     let mut rng = rand::thread_rng();
-    let mask: Vec<f32> = x.data().iter().map(|_| {
-        if rng.gen::<f32>() < p { 0.0 } else { scale }
-    }).collect();
-    let data: Vec<f32> = x.data().iter().zip(mask.iter()).map(|(v, m)| v * m).collect();
+    let mask: Vec<f32> = x
+        .data()
+        .iter()
+        .map(|_| if rng.gen::<f32>() < p { 0.0 } else { scale })
+        .collect();
+    let data: Vec<f32> = x
+        .data()
+        .iter()
+        .zip(mask.iter())
+        .map(|(v, m)| v * m)
+        .collect();
     let shape = x.shape().to_vec();
     if x.requires_grad() {
         Tensor::from_op(
@@ -2157,7 +2171,6 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
         Tensor::from_vec(data, &shape)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
