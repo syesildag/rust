@@ -1,0 +1,19 @@
+[package]
+name = "plot"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "plot"
+path = "src/main.rs"
+
+[dependencies]
+csv = "1"
+plotters = { version = "0.3", default-features = false, features = [
+    "svg_backend",
+    "line_series",
+    "full_palette",
+] }
+
+[lints]
+workspace = true
