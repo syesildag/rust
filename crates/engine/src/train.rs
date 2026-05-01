@@ -70,6 +70,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         .inspect_err(|e| warn!(error = %e, "ignoring saved position db — starting fresh"))
         .unwrap_or_default();
 
+    let loss_path = cfg.output.with_file_name("loss.csv");
+
     let adam_path = cfg.output.with_extension("adam");
     let mut adam = Adam::load_from(&adam_path)
         .and_then(|saved| saved.with_params(model.parameters(), cfg.lr))
@@ -97,6 +99,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         batch_size = cfg.batch_size,
         "starting training"
     );
+
+    let mut loss_log: Vec<(usize, f32, f32)> = Vec::new();
 
     'training: for epoch in 1..=cfg.epochs {
         let epoch_span = info_span!("epoch", n = epoch, total = cfg.epochs);
@@ -146,10 +150,12 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             adam.clip_grad_norm(1.0);
             adam.step();
 
+            let pct = n_samples as f32 / dataset.len() as f32 * 100.0;
             info!(
-                percentage = format!("{:.1}%", n_samples as f64 / dataset.len() as f64 * 100.0),
+                percentage = format!("{pct:.1}%"),
                 loss = loss_val
             );
+            loss_log.push((epoch, pct, loss_val));
 
             for (board, _, game_id) in &filtered {
                 pos_db.record(&board.to_fen(), *game_id, epoch);
@@ -162,5 +168,25 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     model.save_to(&cfg.output)?;
     pos_db.save_to(&db_path)?;
     adam.save_to(&adam_path)?;
+    append_loss_log(&loss_path, &loss_log)?;
     Ok(model)
+}
+
+fn append_loss_log(
+    path: &std::path::Path,
+    entries: &[(usize, f32, f32)],
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let needs_header = !path.exists();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    if needs_header {
+        writeln!(file, "epoch,percentage,loss")?;
+    }
+    for &(epoch, pct, loss) in entries {
+        writeln!(file, "{epoch},{pct:.1},{loss:.8}")?;
+    }
+    Ok(())
 }
