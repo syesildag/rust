@@ -8,3 +8,5 @@ profile.json
 model.adam
 model.pos
 model.bin.good
+loss.csv
+loss.svg
