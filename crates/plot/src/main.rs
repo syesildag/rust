@@ -4,6 +4,11 @@ use std::error::Error;
 fn main() -> Result<(), Box<dyn Error>> {
     let input = std::env::args().nth(1).unwrap_or_else(|| "loss.csv".to_string());
     let output = std::env::args().nth(2).unwrap_or_else(|| "loss.svg".to_string());
+    let window: usize = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+        .max(1);
 
     let data = load_loss(&input)?;
     if data.is_empty() {
@@ -11,7 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    plot_loss(&data, &output)?;
+    plot_loss(&data, &output, window)?;
     println!("Saved → {output}");
     Ok(())
 }
@@ -32,7 +37,21 @@ fn load_loss(path: &str) -> Result<Vec<(f64, f64)>, Box<dyn Error>> {
     Ok(out)
 }
 
-fn plot_loss(data: &[(f64, f64)], output: &str) -> Result<(), Box<dyn Error>> {
+// Trailing moving average: each output point is the mean of the previous `window` raw points.
+// Returns a slice-aligned vec (same length) — early points use whatever is available.
+fn moving_average(data: &[(f64, f64)], window: usize) -> Vec<(f64, f64)> {
+    data.iter()
+        .enumerate()
+        .map(|(i, &(x, _))| {
+            let start = i.saturating_sub(window - 1);
+            let slice = &data[start..=i];
+            let mean = slice.iter().map(|&(_, y)| y).sum::<f64>() / slice.len() as f64;
+            (x, mean)
+        })
+        .collect()
+}
+
+fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box<dyn Error>> {
     let x_max = data.iter().copied().map(|(x, _)| x).fold(f64::NEG_INFINITY, f64::max);
     let y_min = data.iter().copied().map(|(_, y)| y).fold(f64::INFINITY, f64::min);
     let y_max = data.iter().copied().map(|(_, y)| y).fold(f64::NEG_INFINITY, f64::max);
@@ -54,10 +73,24 @@ fn plot_loss(data: &[(f64, f64)], output: &str) -> Result<(), Box<dyn Error>> {
         .y_desc("Loss (MSE)")
         .draw()?;
 
-    chart
-        .draw_series(LineSeries::new(data.iter().copied(), &BLUE))?
-        .label("train loss")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+    if window > 1 {
+        // Draw raw data as a faint background series
+        chart.draw_series(LineSeries::new(
+            data.iter().copied(),
+            RGBColor(180, 200, 230),
+        ))?;
+
+        let smoothed = moving_average(data, window);
+        chart
+            .draw_series(LineSeries::new(smoothed.iter().copied(), &BLUE))?
+            .label(format!("MA-{window}"))
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+    } else {
+        chart
+            .draw_series(LineSeries::new(data.iter().copied(), &BLUE))?
+            .label("train loss")
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+    }
 
     chart
         .configure_series_labels()
