@@ -177,6 +177,7 @@ fn append_loss_log(
     entries: &[(usize, f32, f32)],
 ) -> std::io::Result<()> {
     use std::io::Write;
+    debug!(path = %path.display(), "saving");
     let needs_header = !path.exists();
     let mut file = std::fs::OpenOptions::new()
         .create(true)
