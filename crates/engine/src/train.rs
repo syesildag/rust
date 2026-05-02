@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tensor::optim::Adam;
 use tensor::{ops, Tensor};
-use tracing::{info, info_span, warn};
+use tracing::{info, info_span, warn, debug};
 
 /// Hyper-parameters for a training run.
 pub struct TrainConfig {
