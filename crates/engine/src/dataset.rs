@@ -2,7 +2,7 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use crate::fen_file::parse_fen_file;
+use crate::fen_file::{parse_csv_file, parse_fen_file};
 use crate::persist::Persist;
 use crate::pgn::{parse_pgn, Sample};
 use chess::fen;
@@ -38,9 +38,9 @@ impl ChessDataset {
 
     /// Loads positions from multiple files or directories.
     ///
-    /// Supports `.pgn`, `.fen`, and `.epd` files.  Directories are scanned for
-    /// all files with those extensions.  Unreadable files are skipped with a
-    /// warning on stderr.
+    /// Supports `.pgn`, `.fen`, `.epd`, and `.csv` files.  Directories are
+    /// scanned for all files with those extensions.  Unreadable files are
+    /// skipped with a warning on stderr.
     #[must_use]
     pub fn from_pgn_files(paths: &[std::path::PathBuf]) -> Self {
         let mut ds = Self::new();
@@ -175,6 +175,8 @@ impl ChessDataset {
                 let before = self.samples.len();
                 let new_samples = if is_fen_extension(path) {
                     parse_fen_file(&text)
+                } else if is_csv_extension(path) {
+                    parse_csv_file(&text)
                 } else {
                     parse_pgn(&text)
                 };
@@ -258,11 +260,17 @@ fn is_fen_extension(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("fen") || ext.eq_ignore_ascii_case("epd"))
 }
 
+fn is_csv_extension(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
+}
+
 fn is_supported_extension(path: &Path) -> bool {
     path.extension().is_some_and(|ext| {
         ext.eq_ignore_ascii_case("pgn")
             || ext.eq_ignore_ascii_case("fen")
             || ext.eq_ignore_ascii_case("epd")
+            || ext.eq_ignore_ascii_case("csv")
     })
 }
 
