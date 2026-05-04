@@ -1413,19 +1413,29 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
     let mut saved_x_hat = vec![0.0f32; n * c * h * w];
     let mut saved_inv_std = vec![0.0f32; c];
     for ci in 0..c {
+        // Two-pass variance: first compute the mean, then sum squared deviations.
+        // The one-pass formula `sq/m - mean²` suffers catastrophic cancellation
+        // when activations are large but nearly identical across the batch, which
+        // drives `var` slightly negative and causes `sqrt(var + eps) = NaN`.
         let mut sum = 0.0f32;
-        let mut sq = 0.0f32;
         for ni in 0..n {
             for hi in 0..h {
                 for wi in 0..w {
-                    let v = src[ni * c * h * w + ci * h * w + hi * w + wi];
-                    sum += v;
-                    sq += v * v;
+                    sum += src[ni * c * h * w + ci * h * w + hi * w + wi];
                 }
             }
         }
         let mean = sum / m;
-        let var = sq / m - mean * mean;
+        let mut var = 0.0f32;
+        for ni in 0..n {
+            for hi in 0..h {
+                for wi in 0..w {
+                    let d = src[ni * c * h * w + ci * h * w + hi * w + wi] - mean;
+                    var += d * d;
+                }
+            }
+        }
+        let var = var / m;
         let inv_std = 1.0 / (var + eps).sqrt();
         saved_inv_std[ci] = inv_std;
         for ni in 0..n {
