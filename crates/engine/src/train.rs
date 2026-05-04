@@ -137,10 +137,25 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             let targets = Tensor::from_vec(outcomes, &[b, 1]);
             let loss = ops::mse_loss_tensor(&preds, &targets);
 
+            let pct = n_samples as f32 / dataset.len() as f32 * 100.0;
             let loss_val = loss.data()[0];
             if !loss_val.is_finite() {
+                let pred_data = preds.data();
+                let pred_min = pred_data.iter().copied().fold(f32::INFINITY, f32::min);
+                let pred_max = pred_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let n_nonfinite_preds = pred_data.iter().filter(|v| !v.is_finite()).count();
+                let target_data = targets.data();
+                let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
+                let target_max = target_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                 warn!(
                     loss = loss_val,
+                    percentage = format!("{pct:.1}%"),
+                    batch_size = b,
+                    pred_min,
+                    pred_max,
+                    n_nonfinite_preds,
+                    target_min,
+                    target_max,
                     "non-finite loss — skipping optimizer step for this batch"
                 );
                 continue;
@@ -150,7 +165,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             adam.clip_grad_norm(1.0);
             adam.step();
 
-            let pct = n_samples as f32 / dataset.len() as f32 * 100.0;
             info!(
                 percentage = format!("{pct:.1}%"),
                 loss = loss_val
