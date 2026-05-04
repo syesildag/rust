@@ -141,9 +141,20 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             let loss_val = loss.data()[0];
             if !loss_val.is_finite() {
                 let pred_data = preds.data();
-                let pred_min = pred_data.iter().copied().fold(f32::INFINITY, f32::min);
-                let pred_max = pred_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let n_nonfinite_preds = pred_data.iter().filter(|v| !v.is_finite()).count();
+                let finite_preds: Vec<f32> = pred_data.iter().copied().filter(|v| v.is_finite()).collect();
+                let pred_min = finite_preds.iter().copied().fold(f32::INFINITY, f32::min);
+                let pred_max = finite_preds.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let bad_positions: Vec<String> = pred_data
+                    .iter()
+                    .zip(boards.iter())
+                    .filter_map(|(pred, board)| {
+                        if pred.is_finite() {
+                            None
+                        } else {
+                            Some(format!("pred={pred} fen={}", board.to_fen()))
+                        }
+                    })
+                    .collect();
                 let target_data = targets.data();
                 let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
                 let target_max = target_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -153,7 +164,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     batch_size = b,
                     pred_min,
                     pred_max,
-                    n_nonfinite_preds,
+                    n_nonfinite_preds = bad_positions.len(),
+                    bad_positions = ?bad_positions,
                     target_min,
                     target_max,
                     "non-finite loss — skipping optimizer step for this batch"
