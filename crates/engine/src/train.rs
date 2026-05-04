@@ -158,6 +158,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 let target_data = targets.data();
                 let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
                 let target_max = target_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                // Log the L2 norm of each parameter tensor.  An exploding norm
+                // (e.g. > 100) points to the source layer of the instability.
+                let param_norms: Vec<String> = model
+                    .parameters()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| {
+                        let norm: f32 = p.data().iter().map(|v| v * v).sum::<f32>().sqrt();
+                        format!("p{i}:{norm:.3}")
+                    })
+                    .collect();
                 warn!(
                     loss = loss_val,
                     percentage = format!("{pct:.1}%"),
@@ -168,6 +179,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     bad_positions = ?bad_positions,
                     target_min,
                     target_max,
+                    param_norms = %param_norms.join(" "),
                     "non-finite loss — skipping optimizer step for this batch"
                 );
                 continue;
