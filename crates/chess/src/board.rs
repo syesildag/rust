@@ -240,14 +240,20 @@ impl fmt::Display for Board {
             for file in 0..8u8 {
                 let sq = Square::from_file_rank(file, rank);
                 let ch = match self.piece_at(sq) {
-                    Some(p) => {
-                        let c = p.kind.fen_char();
-                        if p.color == Color::White {
-                            c
-                        } else {
-                            c.to_ascii_lowercase()
-                        }
-                    }
+                    Some(p) => match (p.color, p.kind) {
+                        (Color::White, PieceKind::King)   => '♔',
+                        (Color::White, PieceKind::Queen)  => '♕',
+                        (Color::White, PieceKind::Rook)   => '♖',
+                        (Color::White, PieceKind::Bishop) => '♗',
+                        (Color::White, PieceKind::Knight) => '♘',
+                        (Color::White, PieceKind::Pawn)   => '♙',
+                        (Color::Black, PieceKind::King)   => '♚',
+                        (Color::Black, PieceKind::Queen)  => '♛',
+                        (Color::Black, PieceKind::Rook)   => '♜',
+                        (Color::Black, PieceKind::Bishop) => '♝',
+                        (Color::Black, PieceKind::Knight) => '♞',
+                        (Color::Black, PieceKind::Pawn)   => '♟',
+                    },
                     None => '·',
                 };
                 if file < 7 {
