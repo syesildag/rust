@@ -109,7 +109,11 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
             let san = move_to_san(&board, mv);
             move_log.push((board.clone(), mv));
             board = board.make_move(mv);
-            debug!(mv = %san, board = %format!("\n{board}"));
+            let turn = match board.side_to_move {
+                Color::White => "White",
+                Color::Black => "Black",
+            };
+            debug!(mv = %san, turn, board = %format!("\n{board}"));
         } else {
             break;
         }
