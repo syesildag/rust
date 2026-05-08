@@ -2182,6 +2182,55 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     }
 }
 
+// ── clamp ─────────────────────────────────────────────────────────────────────
+
+struct ClampBackward {
+    input: Tensor,
+    min: f32,
+    max: f32,
+}
+impl GradFn for ClampBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let src = self.input.data();
+            let d: Vec<f32> = g
+                .iter()
+                .zip(src.iter())
+                .map(|(&gi, &xi)| if xi > self.min && xi < self.max { gi } else { 0.0 })
+                .collect();
+            self.input.accumulate_grad(&d);
+        }
+    }
+}
+
+/// Clamps every element of `x` to `[min, max]`.
+///
+/// Gradient is passed through where the input is strictly inside the range,
+/// and zeroed at the boundaries (straight-through is not used here to avoid
+/// encouraging the model to saturate against the clamp).
+#[must_use]
+pub fn clamp(x: &Tensor, min: f32, max: f32) -> Tensor {
+    let src = x.data();
+    let data: Vec<f32> = src.iter().map(|&v| v.clamp(min, max)).collect();
+    let shape = x.shape().to_vec();
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &shape,
+            Arc::new(ClampBackward {
+                input: x.clone(),
+                min,
+                max,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &shape)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

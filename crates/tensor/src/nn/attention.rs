@@ -68,7 +68,7 @@ impl MultiHeadAttention {
                 let query = ops::slice_cols(&q_all, start, end); // [seq, d_k]
                 let key = ops::slice_cols(&k_all, start, end);
                 let val = ops::slice_cols(&v_all, start, end);
-                let scores = ops::mul_scalar(&ops::matmul(&query, &key.t()), scale);
+                let scores = ops::clamp(&ops::mul_scalar(&ops::matmul(&query, &key.t()), scale), -30.0, 30.0);
                 let attn = ops::softmax(&scores);
                 ops::matmul(&attn, &val) // [seq, d_k]
             })
@@ -101,7 +101,7 @@ impl MultiHeadAttention {
                 let key = ops::slice_cols(&k_all, start, end).reshape(&[batch, seq, self.d_k]);
                 let val = ops::slice_cols(&v_all, start, end).reshape(&[batch, seq, self.d_k]);
                 let kt = ops::transpose_last_two(&key); // [B, d_k, seq]
-                let scores = ops::mul_scalar(&ops::matmul_batched(&query, &kt), scale); // [B, seq, seq]
+                let scores = ops::clamp(&ops::mul_scalar(&ops::matmul_batched(&query, &kt), scale), -30.0, 30.0); // [B, seq, seq]
                 let attn =
                     ops::softmax(&scores.reshape(&[batch * seq, seq])).reshape(&[batch, seq, seq]);
                 ops::matmul_batched(&attn, &val).reshape(&[batch * seq, self.d_k])
