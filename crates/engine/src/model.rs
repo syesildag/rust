@@ -33,7 +33,7 @@ use crate::nn::ResNetBackbone;
 use crate::persist::Persist;
 use chess::board::Board;
 use std::io::{Read, Write};
-use tensor::nn::{Linear, TransformerEncoder};
+use tensor::nn::{LayerNorm, Linear, TransformerEncoder};
 use tensor::{ops, Tensor};
 use tracing::trace_span;
 
@@ -55,6 +55,12 @@ const SEQ_LEN: usize = 65;
 pub struct HybridValueNet {
     /// ResNet CNN backbone extracting spatial features from the 17-plane board tensor.
     backbone: ResNetBackbone,
+    /// Layer norm applied to backbone tokens before the transformer encoder.
+    /// The backbone output is relu-clipped and batch-normalised per channel but
+    /// NOT normalised per token; without this norm the first transformer block
+    /// sees activations in [0, ~10], producing attention scores in the hundreds
+    /// that destabilise training even after score clamping.
+    pre_norm: LayerNorm,
     /// Learnable CLS token prepended to the 64 square tokens; shape `[1, 256]`.
     cls_token: Tensor,
     /// Learnable positional embeddings for all 65 tokens (CLS + 64 squares); shape `[65, 256]`.
@@ -71,6 +77,7 @@ impl HybridValueNet {
     pub fn new() -> Self {
         Self {
             backbone: ResNetBackbone::new(IN_CHANNELS, CHANNELS, NUM_RES),
+            pre_norm: LayerNorm::new(D_MODEL),
             cls_token: Tensor::randn(&[1, D_MODEL], 0.02).with_grad(),
             pos_embed: Tensor::randn(&[SEQ_LEN, D_MODEL], 0.02).with_grad(),
             encoder: TransformerEncoder::new(NUM_BLOCKS, D_MODEL, NUM_HEADS, D_FF, DROPOUT),
@@ -100,6 +107,12 @@ impl HybridValueNet {
         // 3. Reshape [1, 256, 8, 8] → [64, 256]
         //    Each of the 64 squares becomes one 256-dim token.
         let x = x.reshape(&[64, D_MODEL]);
+
+        // 3b. Normalise per token before the transformer sees them.
+        //     Backbone output is relu-clipped and batch-normalised per channel
+        //     but not per token; without this the first block's attention scores
+        //     can reach O(1000) and trigger NaN in subsequent operations.
+        let x = self.pre_norm.forward(&x);
 
         // 4. Prepend CLS token → [65, 256]
         let x = ops::cat(&[&self.cls_token, &x]);
@@ -134,6 +147,10 @@ impl HybridValueNet {
         // 3. Reshape → [B, 64, 256]: each spatial position becomes one token.
         let x = x.reshape(&[b, 64, D_MODEL]);
 
+        // 3b. Per-token normalisation before the transformer.
+        //     Applied to [B*64, 256] then reshaped back.
+        let x = self.pre_norm.forward(&x.reshape(&[b * 64, D_MODEL])).reshape(&[b, 64, D_MODEL]);
+
         // 4. Prepend CLS → [B, 65, 256], then broadcast-add positional embeddings.
         let x = ops::prepend_cls_batched(&self.cls_token, &x);
         let x = ops::broadcast_add_batch(&x, &self.pos_embed);
@@ -152,6 +169,7 @@ impl HybridValueNet {
     #[must_use]
     pub fn parameters(&self) -> Vec<Tensor> {
         let mut p = self.backbone.parameters();
+        p.extend(self.pre_norm.parameters());
         p.push(self.cls_token.clone());
         p.push(self.pos_embed.clone());
         p.extend(self.encoder.parameters());
