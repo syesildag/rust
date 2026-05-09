@@ -118,6 +118,46 @@ fn transpose_2d(a: &[f32], m: usize, n: usize) -> Vec<f32> {
     out
 }
 
+/// Transposes each [m×n] slice within a flat [batch*m, n] array to [n×m],
+/// returning a flat [batch*n, m] array.
+fn transpose_batched(data: &[f32], batch: usize, m: usize, n: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; batch * m * n];
+    for bi in 0..batch {
+        let src = &data[bi * m * n..(bi + 1) * m * n];
+        let dst = &mut out[bi * n * m..(bi + 1) * n * m];
+        for i in 0..m {
+            for j in 0..n {
+                dst[j * m + i] = src[i * n + j];
+            }
+        }
+    }
+    out
+}
+
+/// GPU-aware batched matmul over flat data: [batch,m,k] × [batch,k,n] → [batch,m,n].
+fn dispatch_matmul_batched(
+    a: &[f32],
+    b: &[f32],
+    batch: usize,
+    m: usize,
+    k: usize,
+    n: usize,
+) -> Vec<f32> {
+    if batch * m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
+        if let Some(g) = gpu::global_gpu() {
+            return g.matmul_batched(a, b, batch, m, k, n);
+        }
+    }
+    let mut c = vec![0.0f32; batch * m * n];
+    for bi in 0..batch {
+        let a_b = &a[bi * m * k..(bi + 1) * m * k];
+        let b_b = &b[bi * k * n..(bi + 1) * k * n];
+        let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
+        c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
+    }
+    c
+}
+
 /// Broadcast-add bias [n] to matrix [m×n].
 fn add_bias(x: &[f32], bias: &[f32], m: usize, n: usize) -> Vec<f32> {
     let mut out = x.to_vec();
@@ -1746,27 +1786,16 @@ impl GradFn for MatMulBatchedBackward {
     }
     fn backward(&self, g: &[f32]) {
         let (batch, m, k, n) = (self.batch, self.m, self.k, self.n);
-        let mut da = vec![0.0f32; batch * m * k];
-        let mut db = vec![0.0f32; batch * k * n];
-        for bi in 0..batch {
-            let g_b = &g[bi * m * n..(bi + 1) * m * n];
-            if self.a.requires_grad() {
-                let b_b = &self.b_data[bi * k * n..(bi + 1) * k * n];
-                let bt = transpose_2d(b_b, k, n);
-                let d = cpu_matmul_2d(g_b, &bt, m, n, k);
-                da[bi * m * k..(bi + 1) * m * k].copy_from_slice(&d);
-            }
-            if self.b.requires_grad() {
-                let a_b = &self.a_data[bi * m * k..(bi + 1) * m * k];
-                let at = transpose_2d(a_b, m, k);
-                let d = cpu_matmul_2d(&at, g_b, k, m, n);
-                db[bi * k * n..(bi + 1) * k * n].copy_from_slice(&d);
-            }
-        }
+        // da = g @ b.T  (batched):  [batch,m,n] × [batch,n,k] → [batch,m,k]
         if self.a.requires_grad() {
+            let b_t = transpose_batched(&self.b_data, batch, k, n); // [batch,n,k]
+            let da = dispatch_matmul_batched(g, &b_t, batch, m, n, k);
             self.a.accumulate_grad(&da);
         }
+        // db = a.T @ g  (batched):  [batch,k,m] × [batch,m,n] → [batch,k,n]
         if self.b.requires_grad() {
+            let a_t = transpose_batched(&self.a_data, batch, m, k); // [batch,k,m]
+            let db = dispatch_matmul_batched(&a_t, g, batch, k, m, n);
             self.b.accumulate_grad(&db);
         }
     }
@@ -1793,29 +1822,7 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let (batch, m, k, n) = (sa[0], sa[1], sa[2], sb[2]);
     let a_data = a.data();
     let b_data = b.data();
-    let data = if batch * m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
-        if let Some(g) = gpu::global_gpu() {
-            g.matmul_batched(&a_data, &b_data, batch, m, k, n)
-        } else {
-            let mut c = vec![0.0f32; batch * m * n];
-            for bi in 0..batch {
-                let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
-                let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
-                let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
-                c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
-            }
-            c
-        }
-    } else {
-        let mut c = vec![0.0f32; batch * m * n];
-        for bi in 0..batch {
-            let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
-            let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
-            let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
-            c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
-        }
-        c
-    };
+    let data = dispatch_matmul_batched(&a_data, &b_data, batch, m, k, n);
     if a.requires_grad() || b.requires_grad() {
         Tensor::from_op(
             data,
@@ -2329,5 +2336,30 @@ mod tests {
         let b = Tensor::zeros(&[16]);
         let y = conv2d(&x, &w, &b, 1);
         assert_eq!(y.shape(), &[1, 16, 8, 8]);
+    }
+
+    #[test]
+    fn matmul_batched_backward_gradients() {
+        // a: [2, 2, 3],  b: [2, 3, 2]
+        let a_data = vec![
+            1.0, 2.0, 3.0,  4.0, 5.0, 6.0,   // batch 0
+            7.0, 8.0, 9.0, 10.0,11.0,12.0,   // batch 1
+        ];
+        let b_data = vec![
+            1.0, 0.0,  0.0, 1.0,  1.0, 1.0,  // batch 0
+            2.0, 0.0,  0.0, 2.0,  1.0, 1.0,  // batch 1
+        ];
+        let a = Tensor::from_vec(a_data, &[2, 2, 3]).with_grad();
+        let b = Tensor::from_vec(b_data, &[2, 3, 2]).with_grad();
+        let c = matmul_batched(&a, &b);  // [2, 2, 2]
+        // sum all elements as scalar loss
+        let loss = sum(&c);
+        loss.backward();
+        // da[bi] = ones_grad @ b[bi].T  (grad of c is all-ones [2,2])
+        // For batch 0: [[1,1],[1,1]] @ [[1,0,1],[0,1,1]] = [[1,1,2],[1,1,2]]
+        let da = a.grad();
+        assert!((da[0] - 1.0).abs() < 1e-5, "da[0] = {}", da[0]);
+        assert!((da[1] - 1.0).abs() < 1e-5, "da[1] = {}", da[1]);
+        assert!((da[2] - 2.0).abs() < 1e-5, "da[2] = {}", da[2]);
     }
 }
