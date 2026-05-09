@@ -113,7 +113,8 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
                 Color::White => "White",
                 Color::Black => "Black",
             };
-            debug!(mv = %san, turn, board = %format!("\n{board}"));
+            let eval = model.forward(&board).data()[0];
+            debug!(mv = %san, turn, eval = format!("{eval:+.3}"), board = %format!("\n{board}"));
         } else {
             break;
         }
