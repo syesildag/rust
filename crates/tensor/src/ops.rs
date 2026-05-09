@@ -2156,13 +2156,12 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     }
     let scale = 1.0 / (1.0 - p);
     let mut rng = rand::thread_rng();
-    let mask: Vec<f32> = x
-        .data()
+    let x_data = x.data();
+    let mask: Vec<f32> = x_data
         .iter()
         .map(|_| if rng.gen::<f32>() < p { 0.0 } else { scale })
         .collect();
-    let data: Vec<f32> = x
-        .data()
+    let data: Vec<f32> = x_data
         .iter()
         .zip(mask.iter())
         .map(|(v, m)| v * m)
