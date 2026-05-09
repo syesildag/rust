@@ -1324,6 +1324,7 @@ struct BatchNorm2dBackward {
     beta: Tensor,
     saved_x_hat: Vec<f32>,
     saved_inv_std: Vec<f32>,
+    gamma_data: Vec<f32>, // saved at forward time
     n: usize,
     c: usize,
     h: usize,
@@ -1336,55 +1337,89 @@ impl GradFn for BatchNorm2dBackward {
     fn backward(&self, g: &[f32]) {
         let (n, c, h, w) = (self.n, self.c, self.h, self.w);
         let m = (n * h * w) as f32;
-        let gamma_data = self.gamma.data();
-        let mut d_input = vec![0.0f32; n * c * h * w];
-        let mut d_gamma = vec![0.0f32; c];
-        let mut d_beta = vec![0.0f32; c];
-        for ci in 0..c {
-            let inv_std = self.saved_inv_std[ci];
-            // Collect x_hat and g values for this channel
-            let mut x_hat_c = vec![0.0f32; n * h * w];
-            let mut g_c = vec![0.0f32; n * h * w];
-            for ni in 0..n {
-                for hi in 0..h {
-                    for wi in 0..w {
-                        let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                        let flat = ni * h * w + hi * w + wi;
-                        x_hat_c[flat] = self.saved_x_hat[idx];
-                        g_c[flat] = g[idx];
+
+        struct ChanGrad {
+            d_gamma: f32,
+            d_beta: f32,
+            d_input: Vec<f32>, // [n*h*w] channel slice; empty if input needs no grad
+        }
+
+        let chan_grads: Vec<ChanGrad> = (0..c)
+            .into_par_iter()
+            .map(|ci| {
+                let inv_std = self.saved_inv_std[ci];
+
+                // d_gamma and d_beta: reductions over this channel, no alloc
+                let mut d_gamma_ci = 0.0f32;
+                let mut d_beta_ci = 0.0f32;
+                for ni in 0..n {
+                    for hi in 0..h {
+                        for wi in 0..w {
+                            let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                            d_gamma_ci += g[idx] * self.saved_x_hat[idx];
+                            d_beta_ci += g[idx];
+                        }
                     }
                 }
-            }
-            // d_gamma, d_beta
-            d_gamma[ci] = g_c.iter().zip(x_hat_c.iter()).map(|(a, b)| a * b).sum();
-            d_beta[ci] = g_c.iter().sum();
-            if self.input.requires_grad() {
-                // Standard BN backward
-                let dx_hat: Vec<f32> = g_c.iter().map(|&gi| gi * gamma_data[ci]).collect();
-                let sum_dx_hat: f32 = dx_hat.iter().sum();
-                let sum_dx_hat_xhat: f32 =
-                    dx_hat.iter().zip(x_hat_c.iter()).map(|(a, b)| a * b).sum();
+
+                let d_input_ci = if self.input.requires_grad() {
+                    // Two-pass BN backward: first collect sums, then compute d_input
+                    let mut sum_dx_hat = 0.0f32;
+                    let mut sum_dx_hat_xhat = 0.0f32;
+                    for ni in 0..n {
+                        for hi in 0..h {
+                            for wi in 0..w {
+                                let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                                let dx_hat = g[idx] * self.gamma_data[ci];
+                                sum_dx_hat += dx_hat;
+                                sum_dx_hat_xhat += dx_hat * self.saved_x_hat[idx];
+                            }
+                        }
+                    }
+                    let mut d_in = vec![0.0f32; n * h * w];
+                    for ni in 0..n {
+                        for hi in 0..h {
+                            for wi in 0..w {
+                                let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                                let flat = ni * h * w + hi * w + wi;
+                                let dx_hat = g[idx] * self.gamma_data[ci];
+                                d_in[flat] = inv_std
+                                    * (dx_hat
+                                        - sum_dx_hat / m
+                                        - self.saved_x_hat[idx] * sum_dx_hat_xhat / m);
+                            }
+                        }
+                    }
+                    d_in
+                } else {
+                    Vec::new()
+                };
+
+                ChanGrad { d_gamma: d_gamma_ci, d_beta: d_beta_ci, d_input: d_input_ci }
+            })
+            .collect();
+
+        if self.input.requires_grad() {
+            let mut d_input = vec![0.0f32; n * c * h * w];
+            for (ci, cg) in chan_grads.iter().enumerate() {
                 for ni in 0..n {
                     for hi in 0..h {
                         for wi in 0..w {
                             let flat = ni * h * w + hi * w + wi;
                             let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                            d_input[idx] = inv_std
-                                * (dx_hat[flat]
-                                    - sum_dx_hat / m
-                                    - x_hat_c[flat] * sum_dx_hat_xhat / m);
+                            d_input[idx] = cg.d_input[flat];
                         }
                     }
                 }
             }
-        }
-        if self.input.requires_grad() {
             self.input.accumulate_grad(&d_input);
         }
         if self.gamma.requires_grad() {
+            let d_gamma: Vec<f32> = chan_grads.iter().map(|cg| cg.d_gamma).collect();
             self.gamma.accumulate_grad(&d_gamma);
         }
         if self.beta.requires_grad() {
+            let d_beta: Vec<f32> = chan_grads.iter().map(|cg| cg.d_beta).collect();
             self.beta.accumulate_grad(&d_beta);
         }
     }
@@ -1411,42 +1446,64 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
     let gamma_data = gamma.data();
     let beta_data = beta.data();
     let m = (n * h * w) as f32;
+    struct ChanFwd {
+        data: Vec<f32>,  // [n*h*w] channel output
+        x_hat: Vec<f32>, // [n*h*w] normalised values
+        inv_std: f32,
+    }
+
+    let chan_results: Vec<ChanFwd> = (0..c)
+        .into_par_iter()
+        .map(|ci| {
+            let mut sum = 0.0f32;
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        sum += src[ni * c * h * w + ci * h * w + hi * w + wi];
+                    }
+                }
+            }
+            let mean = sum / m;
+            let mut var = 0.0f32;
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        let d = src[ni * c * h * w + ci * h * w + hi * w + wi] - mean;
+                        var += d * d;
+                    }
+                }
+            }
+            let inv_std = 1.0 / (var / m + eps).sqrt();
+            let len = n * h * w;
+            let mut data_c = vec![0.0f32; len];
+            let mut x_hat_c = vec![0.0f32; len];
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                        let flat = ni * h * w + hi * w + wi;
+                        let x_hat = (src[idx] - mean) * inv_std;
+                        x_hat_c[flat] = x_hat;
+                        data_c[flat] = gamma_data[ci] * x_hat + beta_data[ci];
+                    }
+                }
+            }
+            ChanFwd { data: data_c, x_hat: x_hat_c, inv_std }
+        })
+        .collect();
+
     let mut data = vec![0.0f32; n * c * h * w];
     let mut saved_x_hat = vec![0.0f32; n * c * h * w];
     let mut saved_inv_std = vec![0.0f32; c];
-    for ci in 0..c {
-        // Two-pass variance: first compute the mean, then sum squared deviations.
-        // The one-pass formula `sq/m - mean²` suffers catastrophic cancellation
-        // when activations are large but nearly identical across the batch, which
-        // drives `var` slightly negative and causes `sqrt(var + eps) = NaN`.
-        let mut sum = 0.0f32;
+    for (ci, res) in chan_results.into_iter().enumerate() {
+        saved_inv_std[ci] = res.inv_std;
         for ni in 0..n {
             for hi in 0..h {
                 for wi in 0..w {
-                    sum += src[ni * c * h * w + ci * h * w + hi * w + wi];
-                }
-            }
-        }
-        let mean = sum / m;
-        let mut var = 0.0f32;
-        for ni in 0..n {
-            for hi in 0..h {
-                for wi in 0..w {
-                    let d = src[ni * c * h * w + ci * h * w + hi * w + wi] - mean;
-                    var += d * d;
-                }
-            }
-        }
-        let var = var / m;
-        let inv_std = 1.0 / (var + eps).sqrt();
-        saved_inv_std[ci] = inv_std;
-        for ni in 0..n {
-            for hi in 0..h {
-                for wi in 0..w {
+                    let flat = ni * h * w + hi * w + wi;
                     let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                    let x_hat = (src[idx] - mean) * inv_std;
-                    saved_x_hat[idx] = x_hat;
-                    data[idx] = gamma_data[ci] * x_hat + beta_data[ci];
+                    data[idx] = res.data[flat];
+                    saved_x_hat[idx] = res.x_hat[flat];
                 }
             }
         }
@@ -1462,6 +1519,7 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
                 beta: beta.clone(),
                 saved_x_hat,
                 saved_inv_std,
+                gamma_data,
                 n,
                 c,
                 h,
