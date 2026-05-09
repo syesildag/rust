@@ -8,6 +8,8 @@ use tracing::info_span;
 use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
 
 fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .with_target(true)

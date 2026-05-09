@@ -8,6 +8,7 @@ core   = { path = "../core" }
 chess  = { path = "../chess" }
 engine = { path = "../engine" }
 tensor = { path = "../tensor" }
+dotenvy = "0.15"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

@@ -93,10 +93,16 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         });
     });
 
+    let step_sleep_ms = std::env::var("TRAIN_STEP_SLEEP_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
     info!(
         positions = dataset.len(),
         epochs = cfg.epochs,
         batch_size = cfg.batch_size,
+        step_sleep_ms,
         "starting training"
     );
 
@@ -188,6 +194,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             loss.backward();
             adam.clip_grad_norm(1.0);
             adam.step();
+
+            if step_sleep_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(step_sleep_ms));
+            }
 
             info!(
                 percentage = format!("{pct:.1}%"),
