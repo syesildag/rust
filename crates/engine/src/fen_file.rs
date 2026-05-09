@@ -55,7 +55,25 @@ fn parse_csv_line(line: &str) -> Option<Sample> {
         }
     };
 
-    let outcome = parse_outcome(outcome_part.trim())?;
+    let outcome_str = outcome_part.trim();
+    // PGN-style result strings map directly to ±1/0.
+    // Numeric values are Stockfish evals in pawn units (range ±∞ for mates),
+    // normalized with tanh so ±4 pawns ≈ ±0.76 and mates saturate toward ±1.
+    let outcome = match outcome_str {
+        "1-0" => 1.0f32,
+        "0-1" => -1.0,
+        "1/2-1/2" => 0.0,
+        other => {
+            let raw: f32 = match other.parse() {
+                Ok(v) => v,
+                Err(_) => {
+                    tracing::warn!(value = other, "unparseable CSV outcome skipped");
+                    return None;
+                }
+            };
+            (raw / 4.0).tanh()
+        }
+    };
     Some((board, outcome, 0u64))
 }
 
@@ -115,8 +133,9 @@ mod tests {
         let text = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, 0.24\n";
         let samples = parse_csv_file(text);
         assert_eq!(samples.len(), 1);
-        assert!((samples[0].1 - 0.24).abs() < 1e-5);
-        assert_eq!(samples[0].2, 0u64); // game_id is always 0
+        // 0.24 pawn units → tanh(0.24/4) ≈ 0.05996
+        assert!((samples[0].1 - (0.24f32 / 4.0).tanh()).abs() < 1e-5);
+        assert_eq!(samples[0].2, 0u64);
     }
 
     #[test]
@@ -127,7 +146,26 @@ rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1, 0.59
 ";
         let samples = parse_csv_file(text);
         assert_eq!(samples.len(), 2);
-        assert!((samples[1].1 - 0.59).abs() < 1e-5);
+        assert!((samples[1].1 - (0.59f32 / 4.0).tanh()).abs() < 1e-5);
+    }
+
+    #[test]
+    fn csv_normalizes_large_evals() {
+        // Values outside (-1,1) pawn units should now be accepted and normalized.
+        let text = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, 8.0\n";
+        let samples = parse_csv_file(text);
+        assert_eq!(samples.len(), 1);
+        // tanh(8/4) = tanh(2) ≈ 0.9640
+        assert!((samples[0].1 - (8.0f32 / 4.0).tanh()).abs() < 1e-5);
+    }
+
+    #[test]
+    fn csv_normalizes_mate_scores() {
+        let text = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, 153.22\n";
+        let samples = parse_csv_file(text);
+        assert_eq!(samples.len(), 1);
+        // Extreme scores saturate close to 1.0
+        assert!(samples[0].1 > 0.999);
     }
 
     #[test]
@@ -149,8 +187,8 @@ rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, 0.5
     }
 
     #[test]
-    fn csv_skips_out_of_range_outcome() {
-        let text = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, 99.0\n";
+    fn csv_skips_unparseable_outcome() {
+        let text = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1, notanumber\n";
         let samples = parse_csv_file(text);
         assert!(samples.is_empty());
     }
