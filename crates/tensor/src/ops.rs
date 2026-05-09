@@ -1166,6 +1166,7 @@ struct Conv2dBackward {
     weight: Tensor,
     bias: Tensor,
     saved_cols: Vec<f32>,
+    weight_data: Vec<f32>,
     n: usize,
     c_in: usize,
     h: usize,
@@ -1203,7 +1204,7 @@ impl GradFn for Conv2dBackward {
                 }
             });
         // weight: [C_out, C_in*kH*kW]
-        let w_data = self.weight.data();
+        let w_data = &self.weight_data;
         if self.weight.requires_grad() {
             // d_weight = cols.T @ g_mat  →  [col_cols, N*HW].T @ [N*HW, C_out] …
             // cols: [N*HW, col_cols],  g_mat: [N*HW, C_out]
@@ -1297,6 +1298,7 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
                 weight: weight.clone(),
                 bias: bias.clone(),
                 saved_cols: cols,
+                weight_data,
                 n,
                 c_in,
                 h,
