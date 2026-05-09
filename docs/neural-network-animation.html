@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Neural Network — Architecture</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%; width: 100%;
+  overflow: hidden;
+  background: #080c14;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ── Top bar ──────────────────────────────────────── */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  height: 46px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  background: rgba(8,12,20,0.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+#topbar-left {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 0.78rem; font-family: ui-monospace, monospace; color: #475569;
+}
+#topbar-title {
+  font-size: 0.82rem; font-weight: 600; color: #94a3b8;
+}
+#topbar-right {
+  font-size: 0.75rem; font-family: ui-monospace, monospace; color: #334155;
+}
+
+/* ── Deck & slides ───────────────────────────────── */
+#deck {
+  position: fixed;
+  top: 46px; bottom: 54px; left: 0; right: 0;
+  overflow: hidden;
+}
+
+.slide {
+  position: absolute; inset: 0;
+  display: flex;
+  visibility: hidden;
+  /* transform and transition are set entirely by JS */
+}
+
+/* left pane — canvas */
+.slide-vis {
+  flex: 0 0 60%;
+  position: relative;
+  background: #05080f;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.slide-vis canvas {
+  display: block;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* right pane — text */
+.slide-text {
+  flex: 0 0 40%;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 32px 36px;
+  border-left: 3px solid var(--phase-color, #334155);
+  position: relative;
+  overflow: hidden;
+}
+.slide-text::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--phase-color, #334155) 6%, transparent) 0%,
+    transparent 60%);
+  pointer-events: none;
+}
+
+.slide-badge {
+  display: inline-flex; align-items: center;
+  font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--phase-color);
+  border: 1px solid color-mix(in srgb, var(--phase-color) 40%, transparent);
+  border-radius: 4px; padding: 3px 8px;
+  width: fit-content; margin-bottom: 14px;
+}
+.slide-title {
+  font-size: clamp(1.1rem, 2.2vw, 1.6rem);
+  font-weight: 700; line-height: 1.2;
+  color: #f1f5f9; margin-bottom: 10px;
+}
+.slide-shape {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  color: var(--phase-color);
+  margin-bottom: 18px;
+  display: flex; align-items: center; gap: 8px;
+}
+.slide-shape .s-in  { color: #334155; }
+.slide-shape .s-arr { color: #475569; }
+.slide-desc {
+  font-size: 0.875rem; line-height: 1.65;
+  color: #94a3b8; margin-bottom: 16px;
+}
+.slide-bullets {
+  list-style: none; display: flex; flex-direction: column; gap: 7px;
+}
+.slide-bullets li {
+  font-size: 0.8rem; color: #64748b;
+  padding-left: 16px; position: relative; line-height: 1.5;
+}
+.slide-bullets li::before {
+  content: '\25B8';
+  position: absolute; left: 0;
+  color: var(--phase-color);
+}
+.slide-step-num {
+  position: absolute; bottom: 24px; right: 28px;
+  font-size: 4rem; font-weight: 800; line-height: 1;
+  color: color-mix(in srgb, var(--phase-color) 10%, transparent);
+  font-family: ui-monospace, monospace;
+  pointer-events: none; user-select: none;
+}
+
+/* ── Bottom controls ─────────────────────────────── */
+#controls {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  height: 54px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+  background: rgba(8,12,20,0.92);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+.ctrl-group { display: flex; align-items: center; gap: 6px; }
+.ctrl-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e2e8f0;
+  border-radius: 7px; padding: 7px 14px;
+  font-size: 0.82rem; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.ctrl-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.14); }
+.ctrl-btn:disabled { opacity: 0.25; cursor: default; }
+
+
+#dots {
+  display: flex; align-items: center; gap: 7px;
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  transition: background 0.3s, transform 0.3s;
+  cursor: pointer;
+}
+.dot.active {
+  background: var(--dot-color, #94a3b8);
+  transform: scale(1.5);
+}
+
+#kbd-hint {
+  font-size: 0.68rem; font-family: ui-monospace, monospace; color: #1e293b;
+}
+
+/* ── Modal overlay ───────────────────────────────── */
+#modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+.modal-box {
+  background: #0d1424;
+  border: 1px solid rgba(129,140,248,0.28);
+  border-radius: 16px;
+  padding: 28px 32px 24px;
+  max-width: 640px; width: 92%;
+  max-height: 82vh; overflow-y: auto;
+  box-shadow: 0 0 80px rgba(129,140,248,0.12);
+  position: relative;
+}
+.modal-close {
+  position: absolute; top: 14px; right: 16px;
+  background: transparent; border: none;
+  color: #334155; font-size: 1.1rem; cursor: pointer;
+  transition: color 0.15s;
+}
+.modal-close:hover { color: #94a3b8; }
+
+.modal-tabs {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 12px;
+}
+.modal-tab {
+  background: transparent; border: none;
+  font-size: 0.77rem; font-weight: 600;
+  padding: 5px 13px; border-radius: 6px;
+  cursor: pointer; color: #475569;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-tab:hover { background: rgba(129,140,248,0.1); color: #94a3b8; }
+.modal-tab.active { background: rgba(129,140,248,0.15); color: #818cf8; }
+
+.modal-page { display: none; }
+.modal-page.active { display: block; }
+
+.modal-page-title {
+  font-size: 1.05rem; font-weight: 700;
+  color: #c7d2fe; margin-bottom: 16px;
+}
+.modal-section { margin-bottom: 18px; }
+.modal-section h3 {
+  font-size: 0.73rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: #475569; margin-bottom: 8px;
+}
+.modal-section p { font-size: 0.83rem; line-height: 1.74; color: #94a3b8; }
+
+.modal-formula {
+  font-family: ui-monospace, monospace; font-size: 0.81rem;
+  background: rgba(129,140,248,0.07);
+  border: 1px solid rgba(129,140,248,0.18);
+  border-radius: 8px; padding: 12px 16px; margin: 10px 0;
+  line-height: 2.1; color: #c7d2fe;
+}
+.fstep { display: flex; align-items: baseline; gap: 10px; }
+.fnum  { font-size: 0.67rem; color: #334155; min-width: 14px; text-align: right; }
+.q { color: #f59e0b; font-weight: 700; }
+.k { color: #14b8a6; font-weight: 700; }
+.v { color: #c084fc; font-weight: 700; }
+.dim {
+  font-size: 0.71rem; color: #475569;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px; padding: 1px 5px;
+}
+
+.analogy-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+  margin: 12px 0;
+}
+.analogy-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px; padding: 10px 12px;
+}
+.analogy-card .ltr {
+  font-size: 1.3rem; font-weight: 800;
+  font-family: ui-monospace, monospace; margin-bottom: 5px;
+}
+.analogy-card p { font-size: 0.75rem; color: #64748b; line-height: 1.52; margin: 0; }
+
+.head-grid {
+  display: grid; grid-template-columns: repeat(4,1fr); gap: 8px;
+  margin: 12px 0;
+}
+.head-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px; padding: 8px 10px;
+}
+.head-card .hn {
+  font-size: 0.67rem; font-weight: 700;
+  font-family: ui-monospace, monospace; margin-bottom: 4px;
+}
+.head-card p { font-size: 0.71rem; color: #475569; line-height: 1.45; margin: 0; }
+
+/* ── Info buttons strip on transformer slide ─────── */
+.slide-info-bar {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  margin-top: 20px;
+}
+.info-btn {
+  background: rgba(129,140,248,0.08);
+  border: 1px solid rgba(129,140,248,0.22);
+  color: #818cf8; border-radius: 20px; padding: 5px 14px;
+  font-size: 0.73rem; cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+  font-family: ui-monospace, monospace;
+}
+.info-btn:hover {
+  background: rgba(129,140,248,0.2);
+  box-shadow: 0 0 14px rgba(129,140,248,0.22);
+}
+
+/* ── Canvas click hint badge ─────────────────────── */
+.vis-hint {
+  position: absolute; bottom: 24px; right: 28px;
+  font-size: 0.67rem; font-family: ui-monospace, monospace;
+  color: #334155; pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <span>&#9824;</span>
+    <span id="topbar-title">Chess Neural Network — Architecture</span>
+  </div>
+  <div id="topbar-right">value network &nbsp;·&nbsp; board position &rarr; scalar &isin; (&minus;1, +1)</div>
+</div>
+
+<div id="deck"></div>
+
+<div id="controls">
+  <div class="ctrl-group">
+    <button class="ctrl-btn" id="prev-btn">&#9664; Prev</button>
+    <button class="ctrl-btn" id="next-btn">Next &#9654;</button>
+  </div>
+  <div id="dots"></div>
+  <div id="kbd-hint">&#8592; &#8594; &nbsp;Space</div>
+</div>
+
+<!-- ── Multi-Head Attention explanation modal ─────── -->
+<div id="modal-overlay" role="dialog" aria-modal="true" aria-label="Multi-Head Attention explained">
+ <div class="modal-box">
+  <button class="modal-close" id="modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-page="0">Q &middot; K &middot; V</button>
+   <button class="modal-tab" data-page="1">Attention formula</button>
+   <button class="modal-tab" data-page="2">Why multi-head?</button>
+   <button class="modal-tab" data-page="3">Feed-Forward</button>
+   <button class="modal-tab" data-page="4">LayerNorm</button>
+  </div>
+
+  <!-- Page 0: Q K V -->
+  <div class="modal-page active" id="modal-page-0">
+   <div class="modal-page-title">Q &middot; K &middot; V Projections</div>
+   <div class="modal-section">
+    <h3>The core idea</h3>
+    <p>Every input token (a board square, 256-dim) is linearly projected into three vectors &mdash; <span class="q">Query</span>, <span class="k">Key</span>, and <span class="v">Value</span> &mdash; each 32-dim for one head. These weight matrices are learned by backprop and are unique to each head and each block.</p>
+   </div>
+   <div class="analogy-grid">
+    <div class="analogy-card">
+     <div class="ltr q">Q</div>
+     <p><strong>Query</strong> &mdash; &ldquo;What am I looking for?&rdquo; This square asks: which other squares should I attend to?</p>
+    </div>
+    <div class="analogy-card">
+     <div class="ltr k">K</div>
+     <p><strong>Key</strong> &mdash; &ldquo;What can I be found by?&rdquo; Each square broadcasts what kind of query it should match.</p>
+    </div>
+    <div class="analogy-card">
+     <div class="ltr v">V</div>
+     <p><strong>Value</strong> &mdash; &ldquo;What do I share?&rdquo; The actual content a square contributes when another square attends to it.</p>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Projection formulas</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="q">Q</span> = X &sdot; W<sub>Q</sub> &emsp;<span class="dim">[65&times;256] &middot; [256&times;32] &rarr; [65&times;32]</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="k">K</span> = X &sdot; W<sub>K</sub> &emsp;<span class="dim">[65&times;256] &middot; [256&times;32] &rarr; [65&times;32]</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="v">V</span> = X &sdot; W<sub>V</sub> &emsp;<span class="dim">[65&times;256] &middot; [256&times;32] &rarr; [65&times;32]</span></span></div>
+    </div>
+    <p>W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> are trainable matrices &mdash; a set of three for every head in every Transformer block.</p>
+   </div>
+  </div>
+
+  <!-- Page 1: Attention formula -->
+  <div class="modal-page" id="modal-page-1">
+   <div class="modal-page-title">The Attention Score Formula</div>
+   <div class="modal-section">
+    <h3>Step by step</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span>S &nbsp;= <span class="q">Q</span> &middot; <span class="k">K</span><sup>T</sup> &emsp;<span class="dim">[65&times;32] &middot; [32&times;65] &rarr; [65&times;65] raw scores</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span>S &nbsp;/= &radic;32 &emsp;<span class="dim">scale by &radic;d<sub>k</sub> to stabilise softmax</span></span></div>
+     <div class="fstep"><span class="fnum">3.</span><span>A &nbsp;= softmax(S) row-wise &emsp;<span class="dim">each row sums to 1.0</span></span></div>
+     <div class="fstep"><span class="fnum">4.</span><span>out = A &middot; <span class="v">V</span> &emsp;<span class="dim">[65&times;65] &middot; [65&times;32] &rarr; [65&times;32]</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>What does S[i, j] mean?</h3>
+    <p>Score S[i,j] = <span class="q">Q</span><sub>i</sub> &middot; <span class="k">K</span><sub>j</sub> measures how relevant token j is to token i. A high score means: &ldquo;square i should borrow a lot from square j's <span class="v">Value</span>.&rdquo; After softmax, row i of A is a probability distribution that weights the 65 <span class="v">V</span> rows.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why divide by &radic;32?</h3>
+    <p>For high-dimensional vectors the dot product magnitude grows with dimension &mdash; roughly proportional to &radic;d<sub>k</sub>. Without scaling, scores become very large, softmax squashes nearly all weight onto one token, and gradients vanish. Dividing by &radic;32 &asymp; 5.66 keeps the scores in a range where softmax stays informative.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Output is a weighted sum of Values</h3>
+    <p>Row i of the output = &sum;<sub>j</sub> A[i,j] &middot; <span class="v">V</span><sub>j</sub>. Token i gathers information from every other token, proportionally to attention weight. Tokens with high scores share more of their <span class="v">Value</span> vector. This is how a bishop on b2 can &ldquo;see&rdquo; a pawn on g7 through the attention matrix, even though they share no convolution kernel.</p>
+   </div>
+  </div>
+
+  <!-- Page 2: Multi-head -->
+  <div class="modal-page" id="modal-page-2">
+   <div class="modal-page-title">Why Multi-Head Attention?</div>
+   <div class="modal-section">
+    <h3>The idea</h3>
+    <p>Instead of one attention with d<sub>k</sub>=256, we run <strong>8 independent attentions</strong> with d<sub>k</sub>=32 in parallel. Each head has its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> weights and learns to attend to <em>different relationships at the same time</em> &mdash; something a single head cannot do.</p>
+   </div>
+   <div class="head-grid">
+    <div class="head-card"><div class="hn" style="color:#818cf8">Head 1</div><p>Rook file control &mdash; which column does a rook dominate?</p></div>
+    <div class="head-card"><div class="hn" style="color:#a78bfa">Head 2</div><p>King safety &mdash; proximity of attacking pieces to each king.</p></div>
+    <div class="head-card"><div class="hn" style="color:#c084fc">Head 3</div><p>Pawn structure &mdash; chains, passed pawns, isolated pawns.</p></div>
+    <div class="head-card"><div class="hn" style="color:#7c3aed">Head 4</div><p>Piece coordination &mdash; knight+bishop battery patterns.</p></div>
+    <div class="head-card"><div class="hn" style="color:#818cf8">Head 5</div><p>Diagonal influence &mdash; bishop long-range diagonals.</p></div>
+    <div class="head-card"><div class="hn" style="color:#a78bfa">Head 6</div><p>Mobility &mdash; squares each piece can reach in one move.</p></div>
+    <div class="head-card"><div class="hn" style="color:#c084fc">Head 7</div><p>Defended squares &mdash; which squares are protected by each side.</p></div>
+    <div class="head-card"><div class="hn" style="color:#7c3aed">Head 8</div><p>Open files and ranks &mdash; unobstructed lines for queens/rooks.</p></div>
+   </div>
+   <div class="modal-section">
+    <h3>Concatenation and final projection</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>concat(h<sub>1</sub>, &hellip;, h<sub>8</sub>) &emsp;<span class="dim">[65 &times; (8&times;32)] = [65&times;256]</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>out = concat &middot; W<sub>O</sub> &emsp;<span class="dim">[65&times;256] &middot; [256&times;256] &rarr; [65&times;256]</span></span></div>
+    </div>
+    <p>W<sub>O</sub> mixes information across all heads. The output is 65&times;256 &mdash; exactly the same shape as the input &mdash; which is why the residual connection (x + sublayer(x)) works without any reshape.</p>
+   </div>
+  </div>
+
+  <!-- Page 3: Feed-Forward Network -->
+  <div class="modal-page" id="modal-page-3">
+   <div class="modal-page-title">Feed-Forward Network (FFN)</div>
+   <div class="modal-section">
+    <h3>Structure — two linear layers with GELU</h3>
+    <p>After attention gathers context from other squares, each token passes through an independent two-layer network. All 65 tokens share the same W<sub>1</sub>/W<sub>2</sub> weights, but each token&rsquo;s distinct values produce a different output.</p>
+   </div>
+   <div class="modal-formula">
+    <div class="fstep"><span class="fnum">1.</span><span>h &nbsp;= GELU( x &middot; W<sub>1</sub> + b<sub>1</sub> ) &emsp;<span class="dim">[65&times;256] &middot; [256&times;1024] &rarr; [65&times;1024]</span></span></div>
+    <div class="fstep"><span class="fnum">2.</span><span>out = h &middot; W<sub>2</sub> + b<sub>2</sub> &emsp;&emsp;&emsp;&emsp;&emsp;<span class="dim">[65&times;1024] &middot; [1024&times;256] &rarr; [65&times;256]</span></span></div>
+   </div>
+   <div class="modal-section">
+    <h3>Why expand to 1024 first?</h3>
+    <p>The 4&times; expansion (256&rarr;1024) gives each token enough &ldquo;working memory&rdquo; to form rich intermediate features before compressing back to 256. The expanded layer can represent combinations of features that cannot be expressed in 256 dimensions directly. This 4&times; ratio is a standard Transformer design choice used in GPT, BERT, and ViT.</p>
+   </div>
+   <div class="modal-section">
+    <h3>GELU vs ReLU</h3>
+    <p>GELU (Gaussian Error Linear Unit) is a smooth activation: GELU(x) = x &middot; &Phi;(x) where &Phi; is the Gaussian CDF. Unlike ReLU which hard-zeros all negatives, GELU partially passes small negatives, producing smoother gradients and faster convergence in deep Transformers. It is the default activation in GPT-2 and later.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Role vs attention — routing vs thinking</h3>
+    <p>Attention answers <em>&ldquo;which squares to look at.&rdquo;</em> FFN answers <em>&ldquo;what to conclude from that.&rdquo;</em> Attention is the routing mechanism; FFN is the computation mechanism &mdash; a small per-token network that digests the gathered context into a new representation.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Parameter count</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>W<sub>1</sub> [256&times;1024] + W<sub>2</sub> [1024&times;256] + biases &asymp; <strong>525K params per block</strong></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>4 blocks &times; 525K &asymp; <strong>2.1M params in FFN layers alone</strong></span></div>
+    </div>
+    <p>FFN accounts for the majority of the Transformer&rsquo;s parameters &mdash; roughly twice as many as the attention projections.</p>
+   </div>
+  </div>
+
+  <!-- Page 4: LayerNorm -->
+  <div class="modal-page" id="modal-page-4">
+   <div class="modal-page-title">Layer Normalisation (LayerNorm)</div>
+   <div class="modal-section">
+    <h3>The formula</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span>&mu; &nbsp;= mean( x ) &emsp;<span class="dim">mean over the 256 features of one token</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span>&sigma; &nbsp;= std( x ) &emsp;&emsp;<span class="dim">std over the 256 features of one token</span></span></div>
+     <div class="fstep"><span class="fnum">3.</span><span>LN(x) = <span class="q">&gamma;</span> &middot; (x &minus; &mu;) / (&sigma; + &epsilon;) + <span class="k">&beta;</span></span></div>
+    </div>
+    <p><span class="q">&gamma;</span> (scale) and <span class="k">&beta;</span> (shift) are learnable parameters &mdash; 256 each. &epsilon; = 1e&minus;5 prevents division by zero. &gamma; and &beta; let the network undo the normalisation if needed.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Applied twice per block</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span>x&prime; &nbsp;= LN( x + MHA(x) ) &emsp;<span class="dim">after attention residual add</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span>x&prime;&prime; = LN( x&prime; + FFN(x&prime;) ) &emsp;<span class="dim">after FFN residual add</span></span></div>
+    </div>
+    <p>This is <strong>Post-LN</strong> style (original Transformer). The input to the next block is x&prime;&prime;, which has been normalised after every sublayer.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why not BatchNorm?</h3>
+    <p>BatchNorm normalises across the <em>batch dimension</em> &mdash; it needs statistics from multiple samples simultaneously. LayerNorm normalises across the <em>feature dimension</em> of a single token, independently of all other tokens and samples. This makes LayerNorm batch-size agnostic &mdash; it works identically during training and inference, even with a single position.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why normalise at all?</h3>
+    <p>The residual sum x + sublayer(x) can have any scale &mdash; it grows as signals accumulate across 4 blocks. Without normalisation, activations drift: small values vanish into irrelevance, large values saturate non-linearities. LayerNorm re-centres each token&rsquo;s 256 features to &mu;&asymp;0, &sigma;&asymp;1 before the learned &gamma;/&beta; rescales them. This keeps gradients healthy and training stable across all 4 stacked Transformer blocks.</p>
+   </div>
+  </div>
+
+ </div><!-- .modal-box -->
+</div><!-- #modal-overlay -->
+
+<script>
+'use strict';
+
+var PHASES = {
+  cnn:         { label: 'CNN Backbone', color: '#f59e0b' },
+  bridge:      { label: 'Bridge',       color: '#14b8a6' },
+  transformer: { label: 'Transformer',  color: '#818cf8' },
+  head:        { label: 'Value Head',   color: '#c084fc' },
+};
+var HEAD_GOLD = '#fbbf24';
+
+var STEPS = [
+  {
+    phase:'cnn', title:'Input Encoding', shapeIn:null, shapeOut:'17 × 8 × 8',
+    desc:'12 piece planes (one per piece type) + 1 side-to-move plane + 4 castling-rights planes. Each plane is an 8×8 binary grid marking occupied or active squares.',
+    bullets:['Piece planes: 6 white + 6 black (Pawn, Knight, Bishop, Rook, Queen, King)','Side-to-move: all 1s = White to move, all 0s = Black to move','Castling: one plane each for WK, WQ, BK, BQ rights'],
+  },
+  {
+    phase:'cnn', title:'Conv2d → BatchNorm → ReLU', shapeIn:'17 × 8 × 8', shapeOut:'256 × 8 × 8',
+    desc:'256 independent filters — each with completely different learned weights. Every filter scans ALL 17 input planes simultaneously using a separate 3×3 kernel per plane; the 17 dot-products sum to one output pixel per filter.',
+    bullets:['256 filters × 17 planes × 9 weights = 39,168 params — each filter unique','Filter #1 might detect knight forks; Filter #2 detects pawn chains — totally different','BatchNorm normalises each channel; ReLU zeros negatives, keeping only activations'],
+  },
+  {
+    phase:'cnn', title:'Residual Block × 8', shapeIn:'256 × 8 × 8', shapeOut:'256 × 8 × 8',
+    desc:'Eight skip-connected blocks refine spatial features. Each block: Conv→BN→ReLU→Conv→BN→Add(skip)→ReLU. Skip connections prevent vanishing gradients.',
+    bullets:['8 blocks × ≈600k parameters each ≈ 5M total for the backbone','Skip connection: output = F(x) + x, learning the residual','Learns piece mobility, pawn structure, tactical motifs'],
+  },
+  {
+    phase:'bridge', title:'Reshape', shapeIn:'256 × 8 × 8', shapeOut:'64 × 256',
+    desc:'The spatial [256×8×8] grid is flattened: each of the 64 board squares becomes a 256-dimensional token — converting from image format to sequence format.',
+    bullets:['64 tokens = 64 board squares (a1 … h8)','Each token = 256-dim feature vector produced by the CNN','Spatial processing hands off to sequence processing here'],
+  },
+  {
+    phase:'bridge', title:'Prepend [CLS] Token', shapeIn:'64 × 256', shapeOut:'65 × 256',
+    desc:'A learnable [CLS] (classification) token is prepended. After Transformer processing it aggregates global board information for the value head.',
+    bullets:['[CLS] is a randomly-initialised learnable vector, trained via backprop','BERT-style: single special token aggregates sequence → scalar output','Without [CLS] you would need to pool all 64 tokens — less expressive'],
+  },
+  {
+    phase:'bridge', title:'Positional Embeddings', shapeIn:'65 × 256', shapeOut:'65 × 256',
+    desc:'Learned position encodings are added element-wise so the Transformer knows which token maps to which board square. Without them, attention is position-blind.',
+    bullets:['65 learnable 256-dim vectors, one per sequence position','Added (not concatenated) — shape is unchanged','Position 0 = [CLS]; positions 1–64 = squares a1…h8'],
+  },
+  {
+    phase:'transformer', title:'Transformer Block × 4', shapeIn:'65 × 256', shapeOut:'65 × 256',
+    desc:'Each block has two sub-layers with residual (skip) connections — the same Add principle as ResNet: output = LayerNorm(x + sublayer(x)). Multi-Head Attention runs 8 heads in parallel; each head learns different relationships between squares.',
+    bullets:['MHA: 8 heads × d_k=32. Each head projects tokens into Q, K, V; scores = softmax(QKᵀ/√32); output = scores · V','Residual Add: output = x + sublayer(x) — exactly like ResNet, prevents gradient vanishing across 4 blocks','FFN adds non-linearity per token (256→1024 GELU→256). LayerNorm after each Add stabilises scale'],
+  },
+  {
+    phase:'head', title:'Extract [CLS] Token', shapeIn:'65 × 256', shapeOut:'256',
+    desc:'Take row 0 — the [CLS] token output. It holds a 256-dimensional summary of the entire board, informed by all 64 squares via four rounds of global attention.',
+    bullets:['Row index 0 = [CLS] position in the sequence','All other 64 square tokens are discarded','256 numbers encode everything the network learned about the position'],
+  },
+  {
+    phase:'head', title:'Linear → tanh', shapeIn:'256', shapeOut:'value ∈ (−1, +1)',
+    desc:'A single linear layer projects 256 features to a scalar, then tanh maps to (−1, +1). Trained with MSE against game outcomes: −1 = Black wins, 0 = Draw, +1 = White wins.',
+    bullets:['Linear(256→1): 256 weights + 1 bias = 257 parameters total','tanh: differentiable, symmetric around 0, bounded — ideal for W/D/B labels','MSE loss treats output as continuous regression'],
+  },
+  {
+    phase:'head', title:'Full Architecture', shapeIn:null, shapeOut:'value ∈ (−1, +1)',
+    desc:'The complete pipeline from a raw board position to a single evaluation score. A CNN backbone extracts local piece patterns, a Bridge converts the spatial grid to a token sequence, and a Transformer lets every square attend to every other before the value head collapses it all to one number.',
+    bullets:['CNN: local feature extraction with 3×3 convolutions and skip connections (~5M params)','Bridge + Transformer: global reasoning — every square sees every other square via attention','~6M parameters total · trained end-to-end with MSE against self-play game outcomes'],
+  },
+];
+
+// ── Build slides ───────────────────────────────────
+var deck = document.getElementById('deck');
+var dotsEl = document.getElementById('dots');
+
+STEPS.forEach(function (step, i) {
+  var phase = PHASES[step.phase];
+  var isLast = i === STEPS.length - 1;
+  var color  = (isLast && step.phase === 'head') ? HEAD_GOLD : phase.color;
+
+  var slide = document.createElement('div');
+  slide.className  = 'slide';
+  slide.dataset.step = String(i);
+  slide.style.setProperty('--phase-color', color);
+
+  // left: canvas pane
+  var visPane = document.createElement('div');
+  visPane.className = 'slide-vis';
+  var canvas = document.createElement('canvas');
+  canvas.className = 'step-canvas';
+  visPane.appendChild(canvas);
+
+  // right: text pane
+  var txtPane = document.createElement('div');
+  txtPane.className = 'slide-text';
+  txtPane.style.setProperty('--phase-color', color);
+
+  var badge = document.createElement('div');
+  badge.className = 'slide-badge';
+  badge.appendChild(document.createTextNode(phase.label));
+
+  var title = document.createElement('h2');
+  title.className = 'slide-title';
+  title.appendChild(document.createTextNode(step.title));
+
+  var shapeDiv = document.createElement('div');
+  shapeDiv.className = 'slide-shape';
+  if (step.shapeIn) {
+    var sIn  = document.createElement('span'); sIn.className  = 's-in';  sIn.appendChild(document.createTextNode(step.shapeIn));
+    var sArr = document.createElement('span'); sArr.className = 's-arr'; sArr.appendChild(document.createTextNode(' → '));
+    shapeDiv.appendChild(sIn); shapeDiv.appendChild(sArr);
+  }
+  var sOut = document.createElement('span'); sOut.appendChild(document.createTextNode(step.shapeOut));
+  shapeDiv.appendChild(sOut);
+
+  var desc = document.createElement('p');
+  desc.className = 'slide-desc';
+  desc.appendChild(document.createTextNode(step.desc));
+
+  var blist = document.createElement('ul');
+  blist.className = 'slide-bullets';
+  step.bullets.forEach(function (b) {
+    var li = document.createElement('li');
+    li.appendChild(document.createTextNode(b));
+    blist.appendChild(li);
+  });
+
+  var bigNum = document.createElement('div');
+  bigNum.className = 'slide-step-num';
+  bigNum.appendChild(document.createTextNode(String(i + 1)));
+
+  txtPane.appendChild(badge); txtPane.appendChild(title);
+  txtPane.appendChild(shapeDiv); txtPane.appendChild(desc);
+  txtPane.appendChild(blist);
+
+  if (i === 6) {
+    var infoBar = document.createElement('div');
+    infoBar.className = 'slide-info-bar';
+    [['? Q · K · V', 0], ['? Attention formula', 1], ['? Why 8 heads?', 2], ['? Feed-Forward', 3], ['? LayerNorm', 4]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openModal(pg); }); })(spec[1]);
+      infoBar.appendChild(b);
+    });
+    txtPane.appendChild(infoBar);
+    // hint badge on the canvas pane
+    var hint = document.createElement('div');
+    hint.className = 'vis-hint';
+    hint.appendChild(document.createTextNode('click canvas for details'));
+    visPane.appendChild(hint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openModal(0); });
+  }
+
+  txtPane.appendChild(bigNum);
+
+  slide.appendChild(visPane); slide.appendChild(txtPane);
+  deck.appendChild(slide);
+
+  // dot
+  var dot = document.createElement('div');
+  dot.className = 'dot';
+  dot.dataset.step = String(i);
+  dot.style.setProperty('--dot-color', color);
+  dot.addEventListener('click', function () { goTo(i); });
+  dotsEl.appendChild(dot);
+});
+
+// ── Canvas setup ───────────────────────────────────
+function setupCanvas(canvas) {
+  var pane = canvas.parentElement;
+  var rect = pane.getBoundingClientRect();
+  var cssW = Math.floor(rect.width  - 40);
+  var cssH = Math.floor(rect.height - 40);
+  var dpr  = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  canvas.width  = cssW * dpr;
+  canvas.height = cssH * dpr;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx: ctx, W: cssW, H: cssH };
+}
+
+// ── Animation registry ─────────────────────────────
+var activeAnim = {};
+
+function startAnim(si) {
+  stopAnim(si);
+  setTimeout(function () {
+    var canvas = document.querySelector('.slide[data-step="' + si + '"] .step-canvas');
+    if (!canvas) return;
+    var s = setupCanvas(canvas);
+    var fn = VISUALIZERS[si];
+    if (fn) fn(s.ctx, s.W, s.H);
+  }, 80);
+}
+
+function stopAnim(si) {
+  if (activeAnim[si]) { activeAnim[si](); delete activeAnim[si]; }
+}
+
+// ── Drawing helpers ────────────────────────────────
+function cArrow(ctx, x1, y1, x2, y2, col, lw) {
+  var a = Math.atan2(y2 - y1, x2 - x1);
+  ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw || 1.5;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 7 * Math.cos(a - 0.4), y2 - 7 * Math.sin(a - 0.4));
+  ctx.lineTo(x2 - 7 * Math.cos(a + 0.4), y2 - 7 * Math.sin(a + 0.4));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+function cBox(ctx, x, y, w, h, label, col, sub) {
+  var r = 6;
+  ctx.save(); ctx.fillStyle = col + '20'; ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 11px system-ui';
+  ctx.fillText(label, x+w/2, sub ? y+h/2-6 : y+h/2);
+  if (sub) { ctx.font = '9px ui-monospace,monospace'; ctx.fillStyle = col+'aa'; ctx.fillText(sub, x+w/2, y+h/2+7); }
+  ctx.restore();
+}
+
+function cLabel(ctx, x, y, text, col, size, align) {
+  ctx.save(); ctx.fillStyle = col || '#64748b'; ctx.font = (size||10)+'px ui-monospace,monospace';
+  ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y); ctx.restore();
+}
+
+// ── Visualizers ────────────────────────────────────
+var VISUALIZERS = {
+
+0: function (ctx, W, H) {
+  var POS = [
+    ['r','n','b','q','k','b','n','r'],['p','p','p','p','p','p','p','p'],
+    [0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],
+    ['P','P','P','P','P','P','P','P'],['R','N','B','Q','K','B','N','R'],
+  ];
+  var UNI = {K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+  var BS = Math.min(H * 0.82, W * 0.46);
+  var C  = BS / 8, BX = 24, BY = (H - BS) / 2;
+
+  var PH = Math.max(9, Math.floor(H / 28)), PG = 3;
+  var TPH = 17 * (PH + PG);
+  var PX = BX + BS + 36, PW = W - PX - 20, PY = (H - TPH) / 2;
+  var PCOLS = ['#fbbf24','#f59e0b','#d97706','#b45309','#92400e','#78350f','#818cf8','#6366f1','#4f46e5','#4338ca','#3730a3','#312e81','#14b8a6','#0d9488','#0f766e','#115e59','#134e4a'];
+  var PNAMES = ['White Pawns','White Knights','White Bishops','White Rooks','White Queens','White King','Black Pawns','Black Knights','Black Bishops','Black Rooks','Black Queens','Black King','Side to Move','Castle WK','Castle WQ','Castle BK','Castle BQ'];
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    for (var r=0;r<8;r++) for (var f=0;f<8;f++) {
+      ctx.fillStyle = (r+f)%2===0 ? '#c8a96e' : '#6b4226';
+      ctx.fillRect(BX+f*C, BY+r*C, C, C);
+      var p = POS[r][f];
+      if (p) { ctx.font=Math.floor(C*0.64)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=p===p.toUpperCase()?'#fff':'#1a0800'; ctx.fillText(UNI[p],BX+f*C+C/2,BY+r*C+C/2); }
+    }
+    ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1; ctx.strokeRect(BX,BY,BS,BS);
+    cLabel(ctx,BX+BS/2,BY+BS+14,'starting position  [8×8]','#475569',10);
+
+    var hi = Math.floor(now/500)%17;
+    cLabel(ctx,PX+PW/2,PY-13,'17 input planes','#475569',10);
+    for (var i=0;i<17;i++) {
+      var py=PY+i*(PH+PG), isHi=i===hi;
+      ctx.globalAlpha = isHi?1:0.36; ctx.fillStyle=PCOLS[i];
+      ctx.fillRect(PX,py,PW,PH);
+      if (isHi) { ctx.fillStyle='rgba(0,0,0,0.9)'; ctx.font='bold '+(Math.max(7,PH-3))+'px system-ui'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(PNAMES[i],PX+3,py+PH/2); }
+    }
+    ctx.globalAlpha=1;
+    cLabel(ctx,PX+PW+8,PY+2.5*(PH+PG),'6 white',PCOLS[0],8,'left');
+    cLabel(ctx,PX+PW+8,PY+8.5*(PH+PG),'6 black',PCOLS[6],8,'left');
+    cLabel(ctx,PX+PW+8,PY+14*(PH+PG),'meta',PCOLS[12],8,'left');
+    cArrow(ctx,BX+BS+6,BY+BS/2,PX-6,PY+TPH/2,'#374151');
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[0]=function(){cancelAnimationFrame(rafId);};
+},
+
+1: function (ctx, W, H) {
+  var AMBER = '#f59e0b', INDIGO = '#818cf8';
+  // Base unit: scales cells to viewport size
+  var U  = Math.max(7, Math.min(15, Math.min(Math.floor(W * 0.019), Math.floor(H * 0.016))));
+  var CS = U, KS = Math.max(6, U - 2), GAP = 1;
+  var PW = 8 * (CS + GAP), PH = 8 * (CS + GAP);
+  var PG = Math.max(6, Math.floor(H * 0.018)); // gap between planes
+  var NSHOW = 4;
+  var totalPH = NSHOW * PH + (NSHOW - 1) * PG;
+  var PY0 = Math.max(24, (H - totalPH) / 2);
+  var KGW = 3 * (KS + 1); // one kernel-grid width
+
+  // Pre-computed static data
+  var pCols  = [AMBER, '#fb923c', '#fcd34d', '#86efac'];
+  var pNames = ['Pawns', 'Knights', 'Bishops', 'Side-to-move'];
+  var PDATA = [];
+  for (var p = 0; p < 17; p++) {
+    var d = [];
+    for (var i = 0; i < 64; i++) d.push(Math.sin(p*2.7+i*1.3) > 0.45 ? 1 : Math.sin(p*2.7+i*1.3) > 0 ? 0.35 : 0);
+    PDATA.push(d);
+  }
+  var F1 = [], F2 = [];
+  for (var p2 = 0; p2 < 17; p2++) {
+    var k1 = [], k2 = [];
+    for (var j = 0; j < 9; j++) {
+      k1.push(+((Math.sin(p2*3.7+j*1.3+0.5)*0.82).toFixed(2)));
+      k2.push(+((Math.cos(p2*2.1+j*2.9+1.0)*0.82).toFixed(2)));
+    }
+    F1.push(k1); F2.push(k2);
+  }
+  var OUT1 = [], OUT2 = [];
+  for (var i2 = 0; i2 < 64; i2++) {
+    OUT1.push((Math.sin(i2*2.1+0.5)+1)/2);
+    OUT2.push((Math.cos(i2*1.7+1.2)+1)/2);
+  }
+
+  // Column layout
+  var M = 10;
+  var C1W = PW + 10;
+  var C3W = Math.max(PW + 10, Math.floor(W * 0.22));
+  var C2W = W - C1W - C3W - M * 4;
+  var C1X = M, C2X = C1X + C1W + M, C3X = C2X + C2W + M;
+  var F1KX = C2X + Math.floor(C2W/4) - Math.floor(KGW/2);
+  var F2KX = C2X + Math.floor(3*C2W/4) - Math.floor(KGW/2);
+
+  // Output grid sizing
+  var OCW = Math.max(4, Math.floor((C3W/2 - 10) / 8));
+  var OGW = 8*(OCW+1), OGH = 8*(OCW+1);
+  var OX1 = C3X + 4, OX2 = C3X + C3W/2 + 2;
+  var OY0 = PY0 + (totalPH - OGH) / 2;
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var kPos = Math.floor((now * 0.0003) % 1 * 36) % 36;
+    var kR = Math.floor(kPos/6), kC = kPos%6;
+
+    // Column headers
+    cLabel(ctx, C1X+PW/2, PY0-14, '4 of 17 Input Planes', '#94a3b8', 9);
+    cLabel(ctx, C2X+C2W/2, PY0-14, '2 of 256 Filters  ← each DIFFERENT', '#94a3b8', 9);
+    cLabel(ctx, C3X+C3W/2, PY0-14, 'Output Channels', '#94a3b8', 9);
+
+    // ── Col 1: input planes with shared sliding window ────────────────
+    for (var pi = 0; pi < NSHOW; pi++) {
+      var py = PY0 + pi*(PH+PG);
+      var dat = PDATA[pi], pc = pCols[pi];
+      for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) {
+        ctx.fillStyle = pc; ctx.globalAlpha = 0.1 + dat[r*8+f]*0.82;
+        ctx.fillRect(C1X+f*(CS+GAP), py+r*(CS+GAP), CS, CS);
+      }
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(C1X+kC*(CS+GAP)-1, py+kR*(CS+GAP)-1, 3*(CS+GAP)+1, 3*(CS+GAP)+1);
+      cLabel(ctx, C1X+PW+5, py+PH/2, pNames[pi], '#4b5563', 8, 'left');
+    }
+    cLabel(ctx, C1X+PW/2, PY0+totalPH+10, '⋮  13 more planes', '#374151', 9);
+
+    // ── Col 2: filter kernel grids, one per plane row ─────────────────
+    cLabel(ctx, F1KX+KGW/2, PY0-4, 'Filter #1', AMBER, 9);
+    cLabel(ctx, F2KX+KGW/2, PY0-4, 'Filter #2', INDIGO, 9);
+    for (var pi2 = 0; pi2 < NSHOW; pi2++) {
+      var py2 = PY0 + pi2*(PH+PG) + Math.floor((PH - 3*(KS+1))/2);
+      var k1 = F1[pi2], k2 = F2[pi2];
+      // Filter 1
+      for (var kr = 0; kr < 3; kr++) for (var kf = 0; kf < 3; kf++) {
+        var w1 = k1[kr*3+kf];
+        ctx.fillStyle = w1 > 0 ? AMBER : '#6366f1'; ctx.globalAlpha = Math.abs(w1)*0.72+0.12;
+        ctx.fillRect(F1KX+kf*(KS+1), py2+kr*(KS+1), KS, KS);
+        if (KS >= 9) {
+          ctx.globalAlpha=1; ctx.fillStyle='#e2e8f0';
+          ctx.font=Math.max(6,KS-5)+'px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText((w1>=0?'+':'')+w1.toFixed(1), F1KX+kf*(KS+1)+KS/2, py2+kr*(KS+1)+KS/2);
+        }
+      }
+      ctx.globalAlpha=1; ctx.strokeStyle=AMBER+'70'; ctx.lineWidth=1;
+      ctx.strokeRect(F1KX-1, py2-1, KGW+1, 3*(KS+1)+1);
+      // Filter 2
+      for (var kr2 = 0; kr2 < 3; kr2++) for (var kf2 = 0; kf2 < 3; kf2++) {
+        var w2 = k2[kr2*3+kf2];
+        ctx.fillStyle = w2 > 0 ? INDIGO : '#f43f5e'; ctx.globalAlpha = Math.abs(w2)*0.72+0.12;
+        ctx.fillRect(F2KX+kf2*(KS+1), py2+kr2*(KS+1), KS, KS);
+        if (KS >= 9) {
+          ctx.globalAlpha=1; ctx.fillStyle='#e2e8f0';
+          ctx.font=Math.max(6,KS-5)+'px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText((w2>=0?'+':'')+w2.toFixed(1), F2KX+kf2*(KS+1)+KS/2, py2+kr2*(KS+1)+KS/2);
+        }
+      }
+      ctx.globalAlpha=1; ctx.strokeStyle=INDIGO+'70'; ctx.lineWidth=1;
+      ctx.strokeRect(F2KX-1, py2-1, KGW+1, 3*(KS+1)+1);
+      // + symbol between rows
+      if (pi2 < NSHOW-1) {
+        var midY = PY0 + pi2*(PH+PG) + PH + PG/2;
+        cLabel(ctx, F1KX+KGW/2, midY, '⊕', AMBER, 11);
+        cLabel(ctx, F2KX+KGW/2, midY, '⊕', INDIGO, 11);
+      }
+    }
+    var sigY = PY0 + totalPH + 6;
+    cLabel(ctx, F1KX+KGW/2, sigY,    '⋮  Σ 17 planes', AMBER,  9);
+    cLabel(ctx, F2KX+KGW/2, sigY,    '⋮  Σ 17 planes', INDIGO, 9);
+    cLabel(ctx, F1KX+KGW/2, sigY+12, '→ 1 output pixel', AMBER+'cc',  8);
+    cLabel(ctx, F2KX+KGW/2, sigY+12, '→ 1 output pixel', INDIGO+'cc', 8);
+
+    // ── Col 3: two output channel maps ───────────────────────────────
+    cLabel(ctx, OX1+OGW/2, OY0-8, 'Ch #1', AMBER, 9);
+    cLabel(ctx, OX2+OGW/2, OY0-8, 'Ch #2', INDIGO, 9);
+    for (var or1 = 0; or1 < 8; or1++) for (var of1 = 0; of1 < 8; of1++) {
+      ctx.fillStyle=AMBER; ctx.globalAlpha=0.1+OUT1[or1*8+of1]*0.85;
+      ctx.fillRect(OX1+of1*(OCW+1), OY0+or1*(OCW+1), OCW, OCW);
+    }
+    ctx.globalAlpha=1; ctx.strokeStyle=AMBER+'50'; ctx.lineWidth=1;
+    ctx.strokeRect(OX1-1, OY0-1, OGW+1, OGH+1);
+    for (var or2 = 0; or2 < 8; or2++) for (var of2 = 0; of2 < 8; of2++) {
+      ctx.fillStyle=INDIGO; ctx.globalAlpha=0.1+OUT2[or2*8+of2]*0.85;
+      ctx.fillRect(OX2+of2*(OCW+1), OY0+or2*(OCW+1), OCW, OCW);
+    }
+    ctx.globalAlpha=1; ctx.strokeStyle=INDIGO+'50'; ctx.lineWidth=1;
+    ctx.strokeRect(OX2-1, OY0-1, OGW+1, OGH+1);
+    cLabel(ctx, C3X+C3W/2, OY0+OGH+12, '× 256 channels total', '#4b5563', 9);
+
+    // BatchNorm / ReLU bar chart
+    var BNY = OY0 + OGH + 26, BNH = Math.min(72, H - BNY - 16);
+    var BW2 = C3W - 16;
+    if (BNH > 22) {
+      cLabel(ctx, C3X+8+BW2*0.25, BNY-4, 'after BN', '#475569', 8);
+      cLabel(ctx, C3X+8+BW2*0.75, BNY-4, 'after ReLU', '#14b8a6', 8);
+      var mid2 = BNY + BNH/2;
+      ctx.strokeStyle='#1e293b'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(C3X+8, mid2); ctx.lineTo(C3X+8+BW2*0.45, mid2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(C3X+8+BW2*0.55, mid2); ctx.lineTo(C3X+8+BW2, mid2); ctx.stroke();
+      var nb = 10, bw3 = Math.max(2, Math.floor(BW2*0.44/nb)-1);
+      for (var bi = 0; bi < nb; bi++) {
+        var rv = Math.sin(bi*1.9+now*0.001)*1.2;
+        var bxR = C3X+8+bi*(bw3+1), bxN = C3X+8+BW2*0.55+bi*(bw3+1);
+        var bh = Math.abs(rv)*BNH*0.44;
+        ctx.fillStyle = rv>0 ? '#14b8a6' : '#ef4444'; ctx.globalAlpha=0.8;
+        ctx.fillRect(bxR, rv>0 ? mid2-bh : mid2, bw3, bh);
+        if (rv > 0) { ctx.fillStyle='#14b8a6'; ctx.globalAlpha=0.9; ctx.fillRect(bxN, mid2-bh, bw3, bh); }
+      }
+      ctx.globalAlpha=1;
+    }
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[1] = function () { cancelAnimationFrame(rafId); };
+},
+
+2: function (ctx, W, H) {
+  var COL='#f59e0b';
+  var blocks=[{label:'Conv2d',sub:'3×3'},{label:'BN'},{label:'ReLU'},{label:'Conv2d',sub:'3×3'},{label:'BN'}];
+  var BW=Math.floor(W/9), BH=Math.floor(H*0.2), BGAP=Math.floor(W*0.025);
+  var totalW=blocks.length*BW+(blocks.length-1)*BGAP;
+  var BX0=(W-totalW)/2-20, MY=H/2+6;
+  var addR=Math.floor(BH*0.45);
+  var addX=BX0+totalW+BGAP, reluX=addX+addR*2+BGAP;
+  var skipY=MY-BH/2-Math.floor(H*0.12), inX=BX0-52;
+  var TOTAL=blocks.length+3;
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var phase=(now/1600)%1*TOTAL;
+    cLabel(ctx,inX+18,MY,'x',COL,Math.floor(BH*0.42));
+    cArrow(ctx,inX+28,MY,BX0,MY,'#555');
+    for(var i=0;i<blocks.length;i++) {
+      var bx=BX0+i*(BW+BGAP);
+      var bp=phase-i, pulse=(bp>0&&bp<1)?Math.sin(bp*Math.PI):0;
+      ctx.save(); if(pulse>0.01){ctx.shadowColor=COL;ctx.shadowBlur=12*pulse;}
+      cBox(ctx,bx,MY-BH/2,BW,BH,blocks[i].label,COL,blocks[i].sub||'');
+      ctx.restore();
+      if(i<blocks.length-1) cArrow(ctx,bx+BW,MY,bx+BW+BGAP,MY,'#374151');
+    }
+    cArrow(ctx,BX0+totalW,MY,addX,MY,'#374151');
+    var sp=phase-(blocks.length+0.5), spulse=(sp>0&&sp<1)?Math.sin(sp*Math.PI):0;
+    ctx.save(); ctx.setLineDash([6,4]);
+    ctx.strokeStyle=spulse>0.01?COL:'#2d3748'; ctx.lineWidth=spulse>0.01?2:1.2;
+    if(spulse>0.01){ctx.shadowColor=COL;ctx.shadowBlur=8*spulse;}
+    ctx.beginPath(); ctx.moveTo(inX+28,MY); ctx.lineTo(inX+28,skipY); ctx.lineTo(addX+addR,skipY); ctx.lineTo(addX+addR,MY-addR); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+    var ap=phase-(blocks.length+1.2), apulse=(ap>0&&ap<1)?Math.sin(ap*Math.PI):0;
+    ctx.save(); if(apulse>0.01){ctx.shadowColor=COL;ctx.shadowBlur=14*apulse;}
+    ctx.beginPath(); ctx.arc(addX+addR,MY,addR,0,Math.PI*2);
+    ctx.fillStyle='#080c14'; ctx.fill();
+    ctx.strokeStyle=apulse>0.01?COL:'#334155'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle=apulse>0.01?COL:'#94a3b8'; ctx.font='bold '+(addR)+'px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('+',addX+addR,MY+1);
+    ctx.restore();
+    cArrow(ctx,addX+addR*2,MY,reluX,MY,'#374151');
+    var rp=phase-(blocks.length+2), rpulse=(rp>0&&rp<1)?Math.sin(rp*Math.PI):0;
+    ctx.save(); if(rpulse>0.01){ctx.shadowColor=COL;ctx.shadowBlur=10*rpulse;}
+    cBox(ctx,reluX,MY-BH/2,BW,BH,'ReLU',COL); ctx.restore();
+    cArrow(ctx,reluX+BW,MY,reluX+BW+32,MY,'#374151');
+    cLabel(ctx,reluX+BW+44,MY,'out',COL,Math.floor(BH*0.38));
+    cLabel(ctx,W/2,H-16,'× 8 blocks  ·  output = F(x) + x  (skip connection)','#374151',10);
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[2]=function(){cancelAnimationFrame(rafId);};
+},
+
+3: function (ctx, W, H) {
+  var COL='#14b8a6';
+  var CELL=Math.floor(Math.min(H/12, W/28)), GAP=2;
+  var GW=8*(CELL+GAP), GH=8*(CELL+GAP);
+  var GX=24, GY=(H-GH)/2;
+  var SEQ_W=Math.floor(W*0.22), SEQ_X=W-SEQ_W-16, SEQ_Y=16;
+  var SEQ_H=(H-SEQ_Y*2)/64;
+  var vals=[]; for(var ii=0;ii<64;ii++) vals.push((Math.sin(ii*1.4)+1)*0.5);
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var t=(now/2400)%1, prog=t<0.6?t/0.6:1;
+    cLabel(ctx,GX+GW/2,GY-13,'[256 × 8 × 8]',COL,11);
+    for(var r=0;r<8;r++) for(var f=0;f<8;f++) {
+      var idx=r*8+f, v=vals[idx];
+      ctx.fillStyle=COL; ctx.globalAlpha=(0.15+v*0.85)*Math.max(0,1-Math.max(0,prog*64-idx));
+      ctx.fillRect(GX+f*(CELL+GAP),GY+r*(CELL+GAP),CELL,CELL);
+      if(f===0){ctx.globalAlpha=0.3;cLabel(ctx,GX-3,GY+r*(CELL+GAP)+CELL/2,String.fromCharCode(97)+(8-r),'#475569',7,'right');}
+    }
+    ctx.globalAlpha=1;
+    ctx.strokeStyle=COL+'40'; ctx.lineWidth=1; ctx.strokeRect(GX-1,GY-1,GW+2,GH+2);
+    cArrow(ctx,GX+GW+10,GY+GH/2,SEQ_X-10,SEQ_Y+32*SEQ_H,'#374151');
+    cLabel(ctx,GX+GW+(SEQ_X-GX-GW)/2,GY+GH/2-16,'reshape','#374151',10);
+    cLabel(ctx,SEQ_X+SEQ_W/2,SEQ_Y-13,'[64 × 256]  tokens',COL,11);
+    for(var i=0;i<64;i++){
+      var appear=Math.min(1,Math.max(0,prog*64-i)), v2=vals[i];
+      ctx.fillStyle=COL; ctx.globalAlpha=(0.15+v2*0.85)*appear;
+      ctx.fillRect(SEQ_X,SEQ_Y+i*SEQ_H,SEQ_W*(0.35+v2*0.65),Math.max(1,SEQ_H-1));
+    }
+    ctx.globalAlpha=1;
+    cLabel(ctx,SEQ_X+SEQ_W+5,SEQ_Y+SEQ_H/2,'a1','#334155',8,'left');
+    cLabel(ctx,SEQ_X+SEQ_W+5,SEQ_Y+63*SEQ_H,'h8','#334155',8,'left');
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[3]=function(){cancelAnimationFrame(rafId);};
+},
+
+4: function (ctx, W, H) {
+  var COL='#14b8a6', CLS_COL='#f59e0b';
+  var NUM_VIS=14, TOK_H=(H-44)/NUM_VIS, TOK_W=Math.floor(W*0.55);
+  var TX=(W-TOK_W)/2, TY=18;
+  var vals=[]; for(var ii=0;ii<64;ii++) vals.push((Math.sin(ii*1.4)+1)*0.5);
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var pulse=(Math.sin(now/600)+1)*0.5;
+    ctx.save(); ctx.shadowColor=CLS_COL; ctx.shadowBlur=6+12*pulse;
+    ctx.fillStyle=CLS_COL; ctx.globalAlpha=0.88;
+    ctx.fillRect(TX,TY,TOK_W,TOK_H-3); ctx.globalAlpha=1;
+    ctx.fillStyle='#080c14'; ctx.font='bold '+Math.floor(TOK_H*0.42)+'px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('[CLS]  learnable token',TX+TOK_W/2,TY+(TOK_H-3)/2); ctx.restore();
+    cLabel(ctx,TX-12,TY+(TOK_H-3)/2,'0',CLS_COL,10,'right');
+    for(var i=0;i<NUM_VIS-1;i++){
+      var v=vals[i], y=TY+(i+1)*TOK_H;
+      ctx.fillStyle=COL; ctx.globalAlpha=0.15+v*0.55;
+      ctx.fillRect(TX,y,TOK_W*(0.38+v*0.62),TOK_H-3); ctx.globalAlpha=1;
+      cLabel(ctx,TX-12,y+(TOK_H-3)/2,String(i+1),'#334155',9,'right');
+    }
+    cLabel(ctx,TX+TOK_W/2,TY+NUM_VIS*TOK_H+10,'⋮  64 square tokens  (a1 … h8)','#334155',10);
+    var DX=TX+TOK_W+20, DW=W-DX-10;
+    cLabel(ctx,DX+DW/2,TY-12,'256 dims per token','#334155',9);
+    for(var j=0;j<32;j++){
+      var d=(Math.sin(j*0.8+now*0.0007)+1)*0.5;
+      ctx.fillStyle=CLS_COL; ctx.globalAlpha=0.1+d*0.65;
+      ctx.fillRect(DX+j*(DW/32),TY,DW/32-1,TOK_H-3);
+    }
+    ctx.globalAlpha=1;
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[4]=function(){cancelAnimationFrame(rafId);};
+},
+
+5: function (ctx, W, H) {
+  var COL='#14b8a6', EMB_COL='#818cf8';
+  var NUM_VIS=12, TOK_H=(H-36)/NUM_VIS;
+  var COL_W=Math.floor(W*0.24), GAP=Math.floor(W*0.06);
+  var TX=Math.floor(W*0.04), EX=TX+COL_W+GAP, RX=EX+COL_W+GAP;
+  var TY=26;
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var pulse=(Math.sin(now/500)+1)*0.5;
+    cLabel(ctx,TX+COL_W/2,TY-13,'token vectors',COL,10);
+    cLabel(ctx,EX+COL_W/2,TY-13,'position embeddings',EMB_COL,10);
+    cLabel(ctx,RX+COL_W/2,TY-13,'result  (element-wise +)','#94a3b8',10);
+    for(var i=0;i<NUM_VIS;i++){
+      var y=TY+i*TOK_H, rH=TOK_H-3;
+      var v1=(Math.sin(i*1.4)+1)*0.5, v2=(Math.cos(i*0.9+1.1)+1)*0.5;
+      ctx.fillStyle=COL; ctx.globalAlpha=0.15+v1*0.78; ctx.fillRect(TX,y,COL_W,rH); ctx.globalAlpha=1;
+      ctx.fillStyle=EMB_COL; ctx.globalAlpha=0.15+v2*0.78; ctx.fillRect(EX,y,COL_W,rH); ctx.globalAlpha=1;
+      ctx.fillStyle='#94a3b8'; ctx.globalAlpha=0.15+Math.min(1,(v1+v2)*0.55)*0.78; ctx.fillRect(RX,y,COL_W,rH); ctx.globalAlpha=1;
+      cLabel(ctx,TX-10,y+rH/2,String(i),'#334155',9,'right');
+      ctx.fillStyle='rgba(255,255,255,'+(0.22+pulse*0.55)+')';
+      ctx.font='bold '+Math.floor(rH*0.65)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('+',TX+COL_W+GAP/2,y+rH/2);
+      ctx.fillText('=',EX+COL_W+GAP/2,y+rH/2);
+    }
+    cLabel(ctx,TX+COL_W/2,TY+NUM_VIS*TOK_H+10,'⋮  65 rows','#334155',9);
+    cLabel(ctx,EX+COL_W/2,TY+NUM_VIS*TOK_H+10,'⋮','#334155',9);
+    cLabel(ctx,RX+COL_W/2,TY+NUM_VIS*TOK_H+10,'⋮','#334155',9);
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[5]=function(){cancelAnimationFrame(rafId);};
+},
+
+6: function (ctx, W, H) {
+  var COL = '#818cf8';
+  var HCOLS = ['#818cf8','#a78bfa','#c084fc','#7c3aed']; // 4 of 8 heads
+  var QCOL = '#f59e0b', KCOL = '#14b8a6', VCOL = '#c084fc';
+  var SPLIT = Math.floor(W * 0.56); // left: MHA breakdown, right: block diagram
+
+  // Stable attention weights per head (no heavy math each frame)
+  function softmaxRow(row, head, t) {
+    var raw = [], sum = 0;
+    for (var c = 0; c < 5; c++) {
+      var v = Math.exp(-Math.abs(row - c) * (0.3 + head * 0.15) + Math.sin(t * 0.7 + head * 1.1 + row * 0.5) * 0.5);
+      raw.push(v); sum += v;
+    }
+    return raw.map(function(v){ return v / sum; });
+  }
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var t = now / 1000;
+
+    // ─────────────────────────────────────────────────────
+    // LEFT PANEL: 4 attention heads side by side
+    // ─────────────────────────────────────────────────────
+    var LX = 10, LY = 10, LW = SPLIT - 16;
+    cLabel(ctx, LX + LW/2, LY + 8, 'Multi-Head Attention  —  8 heads run in parallel', COL, 10);
+    cLabel(ctx, LX + LW/2, LY + 20, 'scores = softmax( Q · Kᵀ / √32 )   output = scores · V', '#475569', 9);
+
+    var nH = 4;
+    var hW = Math.floor((LW - (nH - 1) * 6) / nH);
+    var hTop = LY + 30;
+    var hBot = H - 28;
+    var hH   = hBot - hTop;
+
+    for (var h = 0; h < nH; h++) {
+      var hx   = LX + h * (hW + 6);
+      var hcol = HCOLS[h];
+      var pulse = (Math.sin(t * 1.3 - h * 0.9) + 1) * 0.5;
+
+      // Head container outline
+      ctx.save();
+      ctx.strokeStyle = hcol + (pulse > 0.4 ? 'bb' : '40');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(hx, hTop, hW, hH, 6);
+      ctx.stroke();
+      if (pulse > 0.4) { ctx.shadowColor = hcol; ctx.shadowBlur = 6 * pulse; ctx.stroke(); }
+      ctx.restore();
+
+      cLabel(ctx, hx + hW/2, hTop + 9, 'head ' + (h + 1), hcol, 8);
+
+      var innerX = hx + 5, innerW = hW - 10;
+      var cy = hTop + 20;
+
+      // ── Q K V projection boxes ──
+      var qkvH = Math.max(18, Math.floor(hH * 0.13));
+      var qkvW = Math.floor((innerW - 4) / 3);
+      var qkvData = [
+        { l:'Q', c:QCOL, title:'query' },
+        { l:'K', c:KCOL, title:'key' },
+        { l:'V', c:VCOL, title:'value' },
+      ];
+      qkvData.forEach(function(q, qi) {
+        var qx = innerX + qi * (qkvW + 2);
+        ctx.fillStyle = q.c + '22'; ctx.fillRect(qx, cy, qkvW, qkvH);
+        ctx.strokeStyle = q.c + '90'; ctx.lineWidth = 1; ctx.strokeRect(qx, cy, qkvW, qkvH);
+        ctx.fillStyle = q.c; ctx.font = 'bold 9px system-ui';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(q.l, qx + qkvW/2, cy + qkvH/2);
+      });
+      cLabel(ctx, innerX + innerW/2, cy + qkvH + 7, 'linear(256 → 32)', '#334155', 7);
+      cy += qkvH + 16;
+
+      // ── Attention score heatmap 5×5 ──
+      var atmN = 5;
+      var atmSz = Math.min(innerW - 4, Math.floor(hH * 0.36));
+      var atmX  = innerX + (innerW - atmSz) / 2;
+      var atmC  = atmSz / atmN;
+      cLabel(ctx, innerX + innerW/2, cy - 8, 'attention scores (5 of 65)', '#334155', 7);
+      var hiRow = Math.floor(t * 1.2) % atmN;
+      for (var ar = 0; ar < atmN; ar++) {
+        var rw = softmaxRow(ar, h, t);
+        for (var ac = 0; ac < atmN; ac++) {
+          ctx.fillStyle = hcol;
+          ctx.globalAlpha = ar === hiRow ? 0.06 + rw[ac] * 0.92 : 0.04 + rw[ac] * 0.45;
+          ctx.fillRect(atmX + ac * atmC, cy + ar * atmC, atmC - 1, atmC - 1);
+        }
+      }
+      ctx.globalAlpha = 1;
+      // highlight active query row
+      ctx.save(); ctx.strokeStyle = hcol; ctx.lineWidth = 1;
+      ctx.strokeRect(atmX, cy + hiRow * atmC, atmSz, atmC); ctx.restore();
+      cy += atmSz + 6;
+
+      // ── Output bar (weighted sum of V) ──
+      var outH = Math.max(12, Math.floor(hH * 0.09));
+      ctx.fillStyle = hcol; ctx.globalAlpha = 0.15 + pulse * 0.55;
+      ctx.fillRect(innerX, cy, innerW, outH); ctx.globalAlpha = 1;
+      cLabel(ctx, innerX + innerW/2, cy + outH/2, 'out  d=32', hcol, 7);
+      cy += outH;
+    }
+
+    cLabel(ctx, LX + LW/2, hBot - 18,
+      'concat all 8 heads  [8×32 = 256]  →  linear projection  →  [65×256]', COL, 9);
+    cLabel(ctx, LX + LW/2, hBot - 6, '(showing 4 of 8 heads)', '#334155', 8);
+
+    // ─────────────────────────────────────────────────────
+    // RIGHT PANEL: block diagram with explicit residual arcs
+    // ─────────────────────────────────────────────────────
+    var RX = SPLIT + 14, RW = W - RX - 10, RCX = RX + RW/2;
+
+    // Sizes
+    var bH   = Math.floor(H * 0.10);   // box height
+    var addR = Math.floor(bH * 0.38);  // Add circle radius
+    var gV   = Math.floor(H * 0.023);  // vertical gap
+
+    // Vertical positions (computed top-down from centre)
+    var totalH = 24 + (bH+gV) + (addR*2+gV) + (bH+gV) + gV*0.5 + (bH+gV) + (addR*2+gV) + bH + 24;
+    var rY0    = (H - totalH) / 2;
+
+    var py = rY0;
+    cLabel(ctx, RCX, py + 9, 'one block  ×4', '#475569', 9);
+    py += 20;
+
+    // Input
+    cLabel(ctx, RCX, py, 'x', COL, 13);
+    cArrow(ctx, RCX, py + 9, RCX, py + 20, '#555');
+    var inputY = py;
+    py += 20;
+
+    // ── Sub-layer 1: MHA ──
+    var mhaY = py;
+    var pMHA = (t * 2) % 2;
+    var pulMHA = (pMHA > 0 && pMHA < 1) ? Math.sin(pMHA * Math.PI) : 0;
+    ctx.save(); if (pulMHA > 0.01) { ctx.shadowColor = COL; ctx.shadowBlur = 10 * pulMHA; }
+    cBox(ctx, RX, py, RW, bH, 'Multi-Head Attention', COL, '8 heads · d_k=32 · d_v=32');
+    ctx.restore();
+    cArrow(ctx, RCX, py + bH, RCX, py + bH + gV, '#374151');
+    py += bH + gV;
+
+    // Add circle 1
+    var add1Y = py;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(RCX, py + addR, addR, 0, Math.PI * 2);
+    ctx.fillStyle = '#080c14'; ctx.fill();
+    ctx.strokeStyle = COL + 'cc'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = COL; ctx.font = 'bold ' + (addR + 2) + 'px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('+', RCX, py + addR + 1);
+    ctx.restore();
+    cArrow(ctx, RCX, py + addR*2, RCX, py + addR*2 + gV, '#374151');
+    py += addR*2 + gV;
+
+    // LayerNorm 1
+    var ln1Y = py;
+    cBox(ctx, RX, py, RW, bH, 'LayerNorm', COL, 'normalise each token');
+    cArrow(ctx, RCX, py + bH, RCX, py + bH + gV + Math.floor(gV * 0.5), '#374151');
+    py += bH + gV + Math.floor(gV * 0.5);
+
+    // ── Sub-layer 2: FFN ──
+    var ffnY = py;
+    var pFFN = (t * 2 - 0.9) % 2;
+    var pulFFN = (pFFN > 0 && pFFN < 1) ? Math.sin(pFFN * Math.PI) : 0;
+    ctx.save(); if (pulFFN > 0.01) { ctx.shadowColor = COL; ctx.shadowBlur = 10 * pulFFN; }
+    cBox(ctx, RX, py, RW, bH, 'Feed-Forward Network', COL, '256 → 1024 (GELU) → 256');
+    ctx.restore();
+    cArrow(ctx, RCX, py + bH, RCX, py + bH + gV, '#374151');
+    py += bH + gV;
+
+    // Add circle 2
+    var add2Y = py;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(RCX, py + addR, addR, 0, Math.PI * 2);
+    ctx.fillStyle = '#080c14'; ctx.fill();
+    ctx.strokeStyle = COL + 'cc'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = COL; ctx.font = 'bold ' + (addR + 2) + 'px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('+', RCX, py + addR + 1);
+    ctx.restore();
+    cArrow(ctx, RCX, py + addR*2, RCX, py + addR*2 + gV, '#374151');
+    py += addR*2 + gV;
+
+    // LayerNorm 2
+    cBox(ctx, RX, py, RW, bH, 'LayerNorm', COL, 'normalise each token');
+    cArrow(ctx, RCX, py + bH, RCX, py + bH + 16, '#374151');
+    cLabel(ctx, RCX, py + bH + 24, 'out  (= next block\'s x)', COL, 9);
+
+    // ── Residual arc 1: from input → Add1 (right side) ──
+    var res1X  = RX + RW + 12;
+    var res1Y0 = inputY + 12;
+    var res1Y1 = add1Y + addR;
+    var pR1    = (t * 2 - 1.0) % 2;
+    var pulR1  = (pR1 > 0 && pR1 < 1) ? Math.sin(pR1 * Math.PI) : 0;
+    ctx.save();
+    ctx.strokeStyle = pulR1 > 0.05 ? '#a78bfa' : '#1e293b';
+    ctx.lineWidth   = pulR1 > 0.05 ? 2 : 1;
+    if (pulR1 > 0.05) { ctx.shadowColor = '#a78bfa'; ctx.shadowBlur = 7 * pulR1; }
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(RCX, res1Y0);
+    ctx.lineTo(res1X, res1Y0);
+    ctx.lineTo(res1X, res1Y1);
+    ctx.lineTo(RCX + addR, res1Y1);
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    // label
+    ctx.save();
+    ctx.fillStyle = pulR1 > 0.05 ? '#a78bfa' : '#1e293b';
+    ctx.font = 'bold 8px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('residual', res1X + 3, (res1Y0 + res1Y1) / 2 - 5);
+    ctx.font = '8px ui-monospace,monospace';
+    ctx.fillText('(like ResNet)', res1X + 3, (res1Y0 + res1Y1) / 2 + 6);
+    ctx.restore();
+
+    // ── Residual arc 2: from after LN1 → Add2 (left side) ──
+    var res2X  = RX - 12;
+    var res2Y0 = ln1Y + bH + 2;
+    var res2Y1 = add2Y + addR;
+    var pR2    = (t * 2 - 0.1) % 2;
+    var pulR2  = (pR2 > 0 && pR2 < 1) ? Math.sin(pR2 * Math.PI) : 0;
+    ctx.save();
+    ctx.strokeStyle = pulR2 > 0.05 ? '#a78bfa' : '#1e293b';
+    ctx.lineWidth   = pulR2 > 0.05 ? 2 : 1;
+    if (pulR2 > 0.05) { ctx.shadowColor = '#a78bfa'; ctx.shadowBlur = 7 * pulR2; }
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(RCX, res2Y0);
+    ctx.lineTo(res2X, res2Y0);
+    ctx.lineTo(res2X, res2Y1);
+    ctx.lineTo(RCX - addR, res2Y1);
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    ctx.save();
+    ctx.fillStyle = pulR2 > 0.05 ? '#a78bfa' : '#1e293b';
+    ctx.font = 'bold 8px system-ui'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText('residual', res2X - 3, (res2Y0 + res2Y1) / 2 - 5);
+    ctx.font = '8px ui-monospace,monospace';
+    ctx.fillText('(like ResNet)', res2X - 3, (res2Y0 + res2Y1) / 2 + 6);
+    ctx.restore();
+
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[6] = function() { cancelAnimationFrame(rafId); };
+},
+
+7: function (ctx, W, H) {
+  var COL='#c084fc', CLS_COL='#fbbf24';
+  var NUM_VIS=12, TOK_H=(H-40)/NUM_VIS, TOK_W=Math.floor(W*0.44);
+  var TX=22, TY=18;
+  var vals=[]; for(var ii=0;ii<64;ii++) vals.push((Math.sin(ii*1.4)+1)*0.5);
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var pulse=(Math.sin(now/500)+1)*0.5;
+    ctx.save(); ctx.shadowColor=CLS_COL; ctx.shadowBlur=6+14*pulse;
+    ctx.fillStyle=CLS_COL; ctx.globalAlpha=0.88;
+    ctx.fillRect(TX,TY,TOK_W,TOK_H-3); ctx.globalAlpha=1;
+    ctx.fillStyle='#080c14'; ctx.font='bold '+Math.floor(TOK_H*0.4)+'px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('[CLS]  row 0  — extracted',TX+TOK_W/2,TY+(TOK_H-3)/2); ctx.restore();
+    cLabel(ctx,TX-12,TY+(TOK_H-3)/2,'0',CLS_COL,10,'right');
+    for(var i=0;i<NUM_VIS-1;i++){
+      var v=vals[i], y=TY+(i+1)*TOK_H;
+      ctx.fillStyle=COL; ctx.globalAlpha=0.04+v*0.12;
+      ctx.fillRect(TX,y,TOK_W*(0.38+v*0.62),TOK_H-3); ctx.globalAlpha=1;
+      cLabel(ctx,TX-12,y+(TOK_H-3)/2,String(i+1),'#1e293b',9,'right');
+    }
+    cLabel(ctx,TX+TOK_W/2,TY+NUM_VIS*TOK_H+10,'⋮  64 square tokens  (discarded)','#334155',10);
+    var EX=TX+TOK_W+28, EW=W-EX-12;
+    cArrow(ctx,TX+TOK_W,TY+(TOK_H-3)/2,EX,TY+(TOK_H-3)/2,CLS_COL,2);
+    cLabel(ctx,EX+EW/2,TY-12,'[256]  global board summary',CLS_COL,10);
+    var numB=42, bW=(EW)/numB;
+    for(var j=0;j<numB;j++){
+      var bv=(Math.sin(j*0.7+now*0.0009)+1)*0.5;
+      var bH2=Math.max(2,bv*(H-TY-36));
+      ctx.fillStyle=CLS_COL; ctx.globalAlpha=0.12+bv*0.78;
+      ctx.fillRect(EX+j*bW,TY+(H-TY-36)-bH2,bW-1,bH2);
+    }
+    ctx.globalAlpha=1;
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[7]=function(){cancelAnimationFrame(rafId);};
+},
+
+8: function (ctx, W, H) {
+  var COL='#fbbf24';
+  var PX=20, PY=18, PW=Math.floor(W*0.54)-10, PH=H-36;
+  var MX=PX+PW/2, MY=PY+PH/2, SCALE=PW/7;
+  var RX=PX+PW+28, RW=W-RX-12;
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0,0,W,H);
+    var t=now/2200, inputVal=Math.sin(t)*2.5, outVal=Math.tanh(inputVal);
+    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PX,MY); ctx.lineTo(PX+PW,MY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MX,PY); ctx.lineTo(MX,PY+PH); ctx.stroke();
+    cLabel(ctx,PX+PW-2,MY-9,'+3','#334155',9,'right');
+    cLabel(ctx,PX+4,MY-9,'−3','#334155',9,'left');
+    cLabel(ctx,MX+5,PY+6,'+1.0','#334155',9,'left');
+    cLabel(ctx,MX+5,PY+PH-6,'−1.0','#334155',9,'left');
+    ctx.setLineDash([3,4]); ctx.strokeStyle='#1e293b'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PX,PY+4); ctx.lineTo(PX+PW,PY+4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PX,PY+PH-4); ctx.lineTo(PX+PW,PY+PH-4); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.strokeStyle=COL; ctx.lineWidth=2.5;
+    var first=true;
+    for(var px=0;px<=PW;px++){
+      var cy=MY-Math.tanh((px-PW/2)/SCALE)*(PH/2-5);
+      if(first){ctx.moveTo(PX+px,cy);first=false;}else ctx.lineTo(PX+px,cy);
+    }
+    ctx.stroke();
+    var ptX=MX+inputVal*SCALE, ptY=MY-outVal*(PH/2-5);
+    ctx.setLineDash([3,3]); ctx.strokeStyle=COL+'55'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ptX,MY); ctx.lineTo(ptX,ptY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MX,ptY); ctx.lineTo(ptX,ptY); ctx.stroke();
+    ctx.setLineDash([]);
+    var pulse=(Math.sin(now/300)+1)*0.5;
+    ctx.save(); ctx.shadowColor=COL; ctx.shadowBlur=8+6*pulse;
+    ctx.beginPath(); ctx.arc(ptX,ptY,6,0,Math.PI*2); ctx.fillStyle=COL; ctx.fill(); ctx.restore();
+    cLabel(ctx,ptX-8,ptY-14,outVal.toFixed(3),COL,12,'right');
+    cLabel(ctx,MX,PY-10,'tanh(x)',COL,10);
+    cLabel(ctx,RX+RW/2,PY-10,'256 features → 1 value',COL,10);
+    var numBars=256, bH=(PH-60)/numBars;
+    for(var i=0;i<numBars;i++){
+      var bv=(Math.sin(i*0.7+now*0.0007)+1)*0.5;
+      ctx.fillStyle=COL; ctx.globalAlpha=0.1+bv*0.7;
+      ctx.fillRect(RX,PY+4+i*bH,RW*(0.38+bv*0.62),Math.max(0.8,bH-0.5));
+    }
+    ctx.globalAlpha=1;
+    cArrow(ctx,RX+RW/2,PY+4+(PH-60),RX+RW/2,PY+PH-20,'#374151');
+    cLabel(ctx,RX+RW/2,PY+PH-30,'Linear(256→1)','#334155',9);
+    ctx.save(); ctx.shadowColor=COL; ctx.shadowBlur=6+4*pulse;
+    ctx.fillStyle=COL; ctx.globalAlpha=0.9;
+    ctx.fillRect(RX,PY+PH-16,RW,14); ctx.globalAlpha=1;
+    ctx.fillStyle='#080c14'; ctx.font='bold 10px ui-monospace,monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(outVal.toFixed(4),RX+RW/2,PY+PH-9); ctx.restore();
+    rafId=requestAnimationFrame(draw);
+  }
+  rafId=requestAnimationFrame(draw);
+  activeAnim[8]=function(){cancelAnimationFrame(rafId);};
+},
+
+9: function(ctx, W, H) {
+  var BW  = Math.floor(W * 0.52);
+  var BH  = Math.floor(H * 0.067);
+  var AG  = Math.floor(H * 0.021);
+  var BX  = Math.floor((W - BW) / 2);
+  var totalH = 10 * BH + 9 * AG;
+  var BY0 = Math.floor((H - totalH) / 2);
+
+  var blocks = [
+    { label:'Input Encoding',         shape:'17×8×8',       col:'#f59e0b' },
+    { label:'Conv2d → BN → ReLU',    shape:'256×8×8',      col:'#f59e0b' },
+    { label:'Residual Block × 8',     shape:'256×8×8',      col:'#f59e0b' },
+    { label:'Reshape',                shape:'64×256',        col:'#14b8a6' },
+    { label:'Prepend [CLS] Token',    shape:'65×256',        col:'#14b8a6' },
+    { label:'Positional Embeddings',  shape:'65×256',        col:'#14b8a6' },
+    { label:'Transformer Block × 4', shape:'65×256',        col:'#818cf8' },
+    { label:'Extract [CLS] Token',    shape:'256',           col:'#c084fc' },
+    { label:'Linear',                 shape:'256→1',         col:'#c084fc' },
+    { label:'tanh',                   shape:'value∈(−1,+1)', col:'#fbbf24' },
+  ];
+  var phases = [
+    { label:'CNN Backbone', col:'#f59e0b', from:0, to:2 },
+    { label:'Bridge',       col:'#14b8a6', from:3, to:5 },
+    { label:'Transformer',  col:'#818cf8', from:6, to:6 },
+    { label:'Value Head',   col:'#c084fc', from:7, to:9 },
+  ];
+  var N = blocks.length;
+  var SEGS = N * 2 - 1; // blocks + arrows interleaved
+  var CYCLE = 5000;
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var cycleP = (now % CYCLE) / CYCLE;
+    var segIdx = Math.floor(cycleP * SEGS);
+    var segP   = cycleP * SEGS - segIdx;
+
+    // phase brackets (left side)
+    phases.forEach(function(ph) {
+      var y0 = BY0 + ph.from * (BH + AG);
+      var y1 = BY0 + ph.to   * (BH + AG) + BH;
+      var bkx = BX - 18;
+      ctx.save();
+      ctx.strokeStyle = ph.col + '55'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bkx, y0+4); ctx.lineTo(bkx-5, y0+4);
+      ctx.lineTo(bkx-5, y1-4); ctx.lineTo(bkx, y1-4);
+      ctx.stroke();
+      ctx.translate(bkx - 14, (y0+y1)/2);
+      ctx.rotate(-Math.PI/2);
+      ctx.fillStyle = ph.col; ctx.font = 'bold 9px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(ph.label, 0, 0);
+      ctx.restore();
+    });
+
+    for (var i = 0; i < N; i++) {
+      var b   = blocks[i];
+      var by  = BY0 + i * (BH + AG);
+      var blockSeg = i * 2;
+      var active   = segIdx === blockSeg;
+      var glow     = active ? (0.5 + Math.sin(segP * Math.PI * 2) * 0.5) : 0;
+
+      // block
+      ctx.save();
+      if (active) { ctx.shadowColor = b.col; ctx.shadowBlur = 12 + 8 * glow; }
+      ctx.fillStyle   = b.col + (active ? '28' : '10');
+      ctx.strokeStyle = b.col + (active ? 'ff' : '50');
+      ctx.lineWidth   = active ? 2 : 1;
+      var r = 6;
+      ctx.beginPath();
+      ctx.moveTo(BX+r,by); ctx.lineTo(BX+BW-r,by);
+      ctx.quadraticCurveTo(BX+BW,by,BX+BW,by+r);
+      ctx.lineTo(BX+BW,by+BH-r); ctx.quadraticCurveTo(BX+BW,by+BH,BX+BW-r,by+BH);
+      ctx.lineTo(BX+r,by+BH); ctx.quadraticCurveTo(BX,by+BH,BX,by+BH-r);
+      ctx.lineTo(BX,by+r); ctx.quadraticCurveTo(BX,by,BX+r,by);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+
+      // label
+      ctx.fillStyle = active ? b.col : b.col + 'aa';
+      ctx.font = 'bold ' + Math.max(9, Math.floor(BH * 0.38)) + 'px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, BX + BW/2, by + BH/2);
+
+      // shape annotation (right)
+      ctx.fillStyle = active ? b.col : '#2d3748';
+      ctx.font = Math.max(8, Math.floor(BH * 0.30)) + 'px ui-monospace,monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(b.shape, BX + BW + 14, by + BH/2);
+
+      // arrow + particle
+      if (i < N - 1) {
+        var ay0 = by + BH, ay1 = ay0 + AG;
+        var arrowSeg    = i * 2 + 1;
+        var arrowActive = segIdx === arrowSeg;
+        var nc = blocks[i+1].col;
+        ctx.strokeStyle = arrowActive ? nc + 'cc' : '#1a2035';
+        ctx.lineWidth   = arrowActive ? 2 : 1.2;
+        ctx.beginPath(); ctx.moveTo(BX+BW/2, ay0); ctx.lineTo(BX+BW/2, ay1-5); ctx.stroke();
+        ctx.fillStyle = arrowActive ? nc + 'cc' : '#1a2035';
+        ctx.beginPath();
+        ctx.moveTo(BX+BW/2, ay1-1);
+        ctx.lineTo(BX+BW/2-5, ay1-8);
+        ctx.lineTo(BX+BW/2+5, ay1-8);
+        ctx.closePath(); ctx.fill();
+        if (arrowActive) {
+          var pY = ay0 + segP * AG;
+          ctx.save();
+          ctx.shadowColor = nc; ctx.shadowBlur = 10;
+          ctx.fillStyle   = nc;
+          ctx.beginPath(); ctx.arc(BX+BW/2, pY, 4, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[9] = function() { cancelAnimationFrame(rafId); };
+},
+
+}; // VISUALIZERS
+
+// ── Modal ──────────────────────────────────────────
+var modalOverlay  = document.getElementById('modal-overlay');
+var modalTabEls   = document.querySelectorAll('.modal-tab');
+var modalPageEls  = document.querySelectorAll('.modal-page');
+
+function openModal(pageIdx) {
+  showModalPage(pageIdx || 0);
+  modalOverlay.classList.add('open');
+}
+function closeModal() {
+  modalOverlay.classList.remove('open');
+}
+function showModalPage(idx) {
+  modalTabEls.forEach(function (t, i) { t.classList.toggle('active', i === idx); });
+  modalPageEls.forEach(function (p, i) { p.classList.toggle('active', i === idx); });
+}
+
+document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeModal(); });
+modalTabEls.forEach(function (t) {
+  t.addEventListener('click', function () { showModalPage(Number(t.dataset.page)); });
+});
+
+// ── State ──────────────────────────────────────────
+var currentStep = 0;
+
+var allSlides = document.querySelectorAll('.slide');
+var allDots   = document.querySelectorAll('.dot');
+var prevBtn   = document.getElementById('prev-btn');
+var nextBtn   = document.getElementById('next-btn');
+
+// ── Navigation ─────────────────────────────────────
+var TRANSITION = 'transform 0.4s cubic-bezier(0.4,0,0.2,1)';
+
+function goTo(index) {
+  if (index === currentStep) return;
+  var prev    = currentStep;
+  var forward = index > prev;
+  stopAnim(prev);
+  currentStep = index;
+
+  var outSlide = allSlides[prev];
+  var inSlide  = allSlides[currentStep];
+
+  // Snap incoming slide to its off-screen start position (no animation)
+  inSlide.style.transition = 'none';
+  inSlide.style.transform  = forward ? 'translateX(100%)' : 'translateX(-100%)';
+  inSlide.style.visibility = 'visible';
+  void inSlide.offsetWidth; // force reflow before enabling transition
+
+  // Animate both slides simultaneously
+  outSlide.style.transition = TRANSITION;
+  inSlide.style.transition  = TRANSITION;
+  outSlide.style.transform  = forward ? 'translateX(-100%)' : 'translateX(100%)';
+  inSlide.style.transform   = 'translateX(0)';
+
+  // After transition: hide outgoing slide, kill its transition
+  setTimeout(function () {
+    outSlide.style.transition = 'none';
+    outSlide.style.visibility = 'hidden';
+    startAnim(currentStep);
+    updateUI();
+  }, 420);
+}
+
+function updateUI() {
+  prevBtn.disabled = currentStep === 0;
+  nextBtn.disabled = currentStep === STEPS.length - 1;
+
+  var color = getComputedStyle(allSlides[currentStep]).getPropertyValue('--phase-color').trim();
+  allDots.forEach(function (d, i) {
+    d.classList.toggle('active', i === currentStep);
+    if (i === currentStep) d.style.setProperty('--dot-color', color);
+  });
+}
+
+function stepForward() { if (currentStep < STEPS.length - 1) goTo(currentStep + 1); }
+function stepBack()    { if (currentStep > 0) goTo(currentStep - 1); }
+
+// ── Controls ───────────────────────────────────────
+prevBtn.addEventListener('click', stepBack);
+nextBtn.addEventListener('click', stepForward);
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (modalOverlay.classList.contains('open')) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+    e.preventDefault(); stepForward();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    stepBack();
+  }
+});
+
+// ── Init ───────────────────────────────────────────
+// Position all slides off-screen right; show only slide 0
+allSlides.forEach(function (s) {
+  s.style.transform  = 'translateX(100%)';
+  s.style.transition = 'none';
+  s.style.visibility = 'hidden';
+});
+allSlides[0].style.transform  = 'translateX(0)';
+allSlides[0].style.visibility = 'visible';
+startAnim(0);
+updateUI();
+</script>
+</body>
+</html>
