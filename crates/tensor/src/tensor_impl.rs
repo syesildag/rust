@@ -355,8 +355,8 @@ impl Tensor {
         let order = topo_sort(self);
         for t in &order {
             if let Some(gfn) = &t.inner.grad_fn {
-                let grad = t.inner.grad.lock().expect("grad Mutex poisoned").clone();
-                gfn.backward(&grad);
+                let guard = t.inner.grad.lock().expect("grad Mutex poisoned");
+                gfn.backward(guard.as_slice());
             }
         }
     }
