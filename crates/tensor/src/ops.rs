@@ -118,6 +118,46 @@ fn transpose_2d(a: &[f32], m: usize, n: usize) -> Vec<f32> {
     out
 }
 
+/// Transposes each [m×n] slice within a flat [batch*m, n] array to [n×m],
+/// returning a flat [batch*n, m] array.
+fn transpose_batched(data: &[f32], batch: usize, m: usize, n: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; batch * m * n];
+    for bi in 0..batch {
+        let src = &data[bi * m * n..(bi + 1) * m * n];
+        let dst = &mut out[bi * n * m..(bi + 1) * n * m];
+        for i in 0..m {
+            for j in 0..n {
+                dst[j * m + i] = src[i * n + j];
+            }
+        }
+    }
+    out
+}
+
+/// GPU-aware batched matmul over flat data: [batch,m,k] × [batch,k,n] → [batch,m,n].
+fn dispatch_matmul_batched(
+    a: &[f32],
+    b: &[f32],
+    batch: usize,
+    m: usize,
+    k: usize,
+    n: usize,
+) -> Vec<f32> {
+    if batch * m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
+        if let Some(g) = gpu::global_gpu() {
+            return g.matmul_batched(a, b, batch, m, k, n);
+        }
+    }
+    let mut c = vec![0.0f32; batch * m * n];
+    for bi in 0..batch {
+        let a_b = &a[bi * m * k..(bi + 1) * m * k];
+        let b_b = &b[bi * k * n..(bi + 1) * k * n];
+        let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
+        c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
+    }
+    c
+}
+
 /// Broadcast-add bias [n] to matrix [m×n].
 fn add_bias(x: &[f32], bias: &[f32], m: usize, n: usize) -> Vec<f32> {
     let mut out = x.to_vec();
@@ -1166,6 +1206,7 @@ struct Conv2dBackward {
     weight: Tensor,
     bias: Tensor,
     saved_cols: Vec<f32>,
+    weight_data: Vec<f32>,
     n: usize,
     c_in: usize,
     h: usize,
@@ -1203,7 +1244,7 @@ impl GradFn for Conv2dBackward {
                 }
             });
         // weight: [C_out, C_in*kH*kW]
-        let w_data = self.weight.data();
+        let w_data = &self.weight_data;
         if self.weight.requires_grad() {
             // d_weight = cols.T @ g_mat  →  [col_cols, N*HW].T @ [N*HW, C_out] …
             // cols: [N*HW, col_cols],  g_mat: [N*HW, C_out]
@@ -1232,7 +1273,7 @@ impl GradFn for Conv2dBackward {
         }
         if self.input.requires_grad() {
             // d_cols = g_mat @ weight  ([N*HW, C_out] @ [C_out, col_cols] = [N*HW, col_cols])
-            let d_cols = matmul_2d(&g_mat, &w_data, n * col_rows, c_out, col_cols);
+            let d_cols = matmul_2d(&g_mat, w_data, n * col_rows, c_out, col_cols);
             let d_input = col2im(
                 &d_cols, n, self.c_in, self.h, self.w, self.kh, self.kw, self.pad, h_out, w_out,
             );
@@ -1297,6 +1338,7 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
                 weight: weight.clone(),
                 bias: bias.clone(),
                 saved_cols: cols,
+                weight_data,
                 n,
                 c_in,
                 h,
@@ -1316,12 +1358,25 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
 
 // ── batch_norm_2d ─────────────────────────────────────────────────────────────
 
+struct ChanGrad {
+    gamma: f32,
+    beta: f32,
+    input: Vec<f32>, // [n*h*w] channel slice; empty if input needs no grad
+}
+
+struct ChanFwd {
+    data: Vec<f32>,  // [n*h*w] channel output
+    x_hat: Vec<f32>, // [n*h*w] normalised values
+    inv_std: f32,
+}
+
 struct BatchNorm2dBackward {
     input: Tensor,
     gamma: Tensor,
     beta: Tensor,
     saved_x_hat: Vec<f32>,
     saved_inv_std: Vec<f32>,
+    gamma_data: Vec<f32>, // saved at forward time
     n: usize,
     c: usize,
     h: usize,
@@ -1334,55 +1389,87 @@ impl GradFn for BatchNorm2dBackward {
     fn backward(&self, g: &[f32]) {
         let (n, c, h, w) = (self.n, self.c, self.h, self.w);
         let m = (n * h * w) as f32;
-        let gamma_data = self.gamma.data();
-        let mut d_input = vec![0.0f32; n * c * h * w];
-        let mut d_gamma = vec![0.0f32; c];
-        let mut d_beta = vec![0.0f32; c];
-        for ci in 0..c {
-            let inv_std = self.saved_inv_std[ci];
-            // Collect x_hat and g values for this channel
-            let mut x_hat_c = vec![0.0f32; n * h * w];
-            let mut g_c = vec![0.0f32; n * h * w];
-            for ni in 0..n {
-                for hi in 0..h {
-                    for wi in 0..w {
-                        let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                        let flat = ni * h * w + hi * w + wi;
-                        x_hat_c[flat] = self.saved_x_hat[idx];
-                        g_c[flat] = g[idx];
+
+        let chan_grads: Vec<ChanGrad> = (0..c)
+            .into_par_iter()
+            .map(|ci| {
+                let inv_std = self.saved_inv_std[ci];
+
+                // d_gamma and d_beta: reductions over this channel, no alloc
+                let mut d_gamma_ci = 0.0f32;
+                let mut d_beta_ci = 0.0f32;
+                for ni in 0..n {
+                    for hi in 0..h {
+                        for wi in 0..w {
+                            let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                            d_gamma_ci += g[idx] * self.saved_x_hat[idx];
+                            d_beta_ci += g[idx];
+                        }
                     }
                 }
-            }
-            // d_gamma, d_beta
-            d_gamma[ci] = g_c.iter().zip(x_hat_c.iter()).map(|(a, b)| a * b).sum();
-            d_beta[ci] = g_c.iter().sum();
-            if self.input.requires_grad() {
-                // Standard BN backward
-                let dx_hat: Vec<f32> = g_c.iter().map(|&gi| gi * gamma_data[ci]).collect();
-                let sum_dx_hat: f32 = dx_hat.iter().sum();
-                let sum_dx_hat_xhat: f32 =
-                    dx_hat.iter().zip(x_hat_c.iter()).map(|(a, b)| a * b).sum();
+
+                let d_input_ci = if self.input.requires_grad() {
+                    // Two-pass BN backward: first collect sums, then compute d_input
+                    let mut sum_dx_hat = 0.0f32;
+                    let mut sum_dx_hat_xhat = 0.0f32;
+                    for ni in 0..n {
+                        for hi in 0..h {
+                            for wi in 0..w {
+                                let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                                let dx_hat = g[idx] * self.gamma_data[ci];
+                                sum_dx_hat += dx_hat;
+                                sum_dx_hat_xhat += dx_hat * self.saved_x_hat[idx];
+                            }
+                        }
+                    }
+                    let mut d_in = vec![0.0f32; n * h * w];
+                    for ni in 0..n {
+                        for hi in 0..h {
+                            for wi in 0..w {
+                                let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                                let flat = ni * h * w + hi * w + wi;
+                                let dx_hat = g[idx] * self.gamma_data[ci];
+                                d_in[flat] = inv_std
+                                    * (dx_hat
+                                        - sum_dx_hat / m
+                                        - self.saved_x_hat[idx] * sum_dx_hat_xhat / m);
+                            }
+                        }
+                    }
+                    d_in
+                } else {
+                    Vec::new()
+                };
+
+                ChanGrad {
+                    gamma: d_gamma_ci,
+                    beta: d_beta_ci,
+                    input: d_input_ci,
+                }
+            })
+            .collect();
+
+        if self.input.requires_grad() {
+            let mut d_input = vec![0.0f32; n * c * h * w];
+            for (ci, cg) in chan_grads.iter().enumerate() {
                 for ni in 0..n {
                     for hi in 0..h {
                         for wi in 0..w {
                             let flat = ni * h * w + hi * w + wi;
                             let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                            d_input[idx] = inv_std
-                                * (dx_hat[flat]
-                                    - sum_dx_hat / m
-                                    - x_hat_c[flat] * sum_dx_hat_xhat / m);
+                            d_input[idx] = cg.input[flat];
                         }
                     }
                 }
             }
-        }
-        if self.input.requires_grad() {
             self.input.accumulate_grad(&d_input);
         }
         if self.gamma.requires_grad() {
+            let d_gamma: Vec<f32> = chan_grads.iter().map(|cg| cg.gamma).collect();
             self.gamma.accumulate_grad(&d_gamma);
         }
         if self.beta.requires_grad() {
+            let d_beta: Vec<f32> = chan_grads.iter().map(|cg| cg.beta).collect();
             self.beta.accumulate_grad(&d_beta);
         }
     }
@@ -1409,42 +1496,63 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
     let gamma_data = gamma.data();
     let beta_data = beta.data();
     let m = (n * h * w) as f32;
+
+    let chan_results: Vec<ChanFwd> = (0..c)
+        .into_par_iter()
+        .map(|ci| {
+            let mut sum = 0.0f32;
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        sum += src[ni * c * h * w + ci * h * w + hi * w + wi];
+                    }
+                }
+            }
+            let mean = sum / m;
+            let mut var = 0.0f32;
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        let d = src[ni * c * h * w + ci * h * w + hi * w + wi] - mean;
+                        var += d * d;
+                    }
+                }
+            }
+            let inv_std = 1.0 / (var / m + eps).sqrt();
+            let len = n * h * w;
+            let mut data_c = vec![0.0f32; len];
+            let mut x_hat_c = vec![0.0f32; len];
+            for ni in 0..n {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        let idx = ni * c * h * w + ci * h * w + hi * w + wi;
+                        let flat = ni * h * w + hi * w + wi;
+                        let x_hat = (src[idx] - mean) * inv_std;
+                        x_hat_c[flat] = x_hat;
+                        data_c[flat] = gamma_data[ci] * x_hat + beta_data[ci];
+                    }
+                }
+            }
+            ChanFwd {
+                data: data_c,
+                x_hat: x_hat_c,
+                inv_std,
+            }
+        })
+        .collect();
+
     let mut data = vec![0.0f32; n * c * h * w];
     let mut saved_x_hat = vec![0.0f32; n * c * h * w];
     let mut saved_inv_std = vec![0.0f32; c];
-    for ci in 0..c {
-        // Two-pass variance: first compute the mean, then sum squared deviations.
-        // The one-pass formula `sq/m - mean²` suffers catastrophic cancellation
-        // when activations are large but nearly identical across the batch, which
-        // drives `var` slightly negative and causes `sqrt(var + eps) = NaN`.
-        let mut sum = 0.0f32;
+    for (ci, res) in chan_results.into_iter().enumerate() {
+        saved_inv_std[ci] = res.inv_std;
         for ni in 0..n {
             for hi in 0..h {
                 for wi in 0..w {
-                    sum += src[ni * c * h * w + ci * h * w + hi * w + wi];
-                }
-            }
-        }
-        let mean = sum / m;
-        let mut var = 0.0f32;
-        for ni in 0..n {
-            for hi in 0..h {
-                for wi in 0..w {
-                    let d = src[ni * c * h * w + ci * h * w + hi * w + wi] - mean;
-                    var += d * d;
-                }
-            }
-        }
-        let var = var / m;
-        let inv_std = 1.0 / (var + eps).sqrt();
-        saved_inv_std[ci] = inv_std;
-        for ni in 0..n {
-            for hi in 0..h {
-                for wi in 0..w {
+                    let flat = ni * h * w + hi * w + wi;
                     let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                    let x_hat = (src[idx] - mean) * inv_std;
-                    saved_x_hat[idx] = x_hat;
-                    data[idx] = gamma_data[ci] * x_hat + beta_data[ci];
+                    data[idx] = res.data[flat];
+                    saved_x_hat[idx] = res.x_hat[flat];
                 }
             }
         }
@@ -1460,6 +1568,7 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
                 beta: beta.clone(),
                 saved_x_hat,
                 saved_inv_std,
+                gamma_data,
                 n,
                 c,
                 h,
@@ -1685,27 +1794,16 @@ impl GradFn for MatMulBatchedBackward {
     }
     fn backward(&self, g: &[f32]) {
         let (batch, m, k, n) = (self.batch, self.m, self.k, self.n);
-        let mut da = vec![0.0f32; batch * m * k];
-        let mut db = vec![0.0f32; batch * k * n];
-        for bi in 0..batch {
-            let g_b = &g[bi * m * n..(bi + 1) * m * n];
-            if self.a.requires_grad() {
-                let b_b = &self.b_data[bi * k * n..(bi + 1) * k * n];
-                let bt = transpose_2d(b_b, k, n);
-                let d = cpu_matmul_2d(g_b, &bt, m, n, k);
-                da[bi * m * k..(bi + 1) * m * k].copy_from_slice(&d);
-            }
-            if self.b.requires_grad() {
-                let a_b = &self.a_data[bi * m * k..(bi + 1) * m * k];
-                let at = transpose_2d(a_b, m, k);
-                let d = cpu_matmul_2d(&at, g_b, k, m, n);
-                db[bi * k * n..(bi + 1) * k * n].copy_from_slice(&d);
-            }
-        }
+        // da = g @ b.T  (batched):  [batch,m,n] × [batch,n,k] → [batch,m,k]
         if self.a.requires_grad() {
+            let b_t = transpose_batched(&self.b_data, batch, k, n); // [batch,n,k]
+            let da = dispatch_matmul_batched(g, &b_t, batch, m, n, k);
             self.a.accumulate_grad(&da);
         }
+        // db = a.T @ g  (batched):  [batch,k,m] × [batch,m,n] → [batch,k,n]
         if self.b.requires_grad() {
+            let a_t = transpose_batched(&self.a_data, batch, m, k); // [batch,k,m]
+            let db = dispatch_matmul_batched(&a_t, g, batch, k, m, n);
             self.b.accumulate_grad(&db);
         }
     }
@@ -1732,29 +1830,7 @@ pub fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let (batch, m, k, n) = (sa[0], sa[1], sa[2], sb[2]);
     let a_data = a.data();
     let b_data = b.data();
-    let data = if batch * m * k * n > GPU_MATMUL_FLOP_THRESHOLD {
-        if let Some(g) = gpu::global_gpu() {
-            g.matmul_batched(&a_data, &b_data, batch, m, k, n)
-        } else {
-            let mut c = vec![0.0f32; batch * m * n];
-            for bi in 0..batch {
-                let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
-                let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
-                let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
-                c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
-            }
-            c
-        }
-    } else {
-        let mut c = vec![0.0f32; batch * m * n];
-        for bi in 0..batch {
-            let a_b = &a_data[bi * m * k..(bi + 1) * m * k];
-            let b_b = &b_data[bi * k * n..(bi + 1) * k * n];
-            let c_b = cpu_matmul_2d(a_b, b_b, m, k, n);
-            c[bi * m * n..(bi + 1) * m * n].copy_from_slice(&c_b);
-        }
-        c
-    };
+    let data = dispatch_matmul_batched(&a_data, &b_data, batch, m, k, n);
     if a.requires_grad() || b.requires_grad() {
         Tensor::from_op(
             data,
@@ -2156,17 +2232,12 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     }
     let scale = 1.0 / (1.0 - p);
     let mut rng = rand::thread_rng();
-    let mask: Vec<f32> = x
-        .data()
+    let x_data = x.data();
+    let mask: Vec<f32> = x_data
         .iter()
         .map(|_| if rng.gen::<f32>() < p { 0.0 } else { scale })
         .collect();
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .zip(mask.iter())
-        .map(|(v, m)| v * m)
-        .collect();
+    let data: Vec<f32> = x_data.iter().zip(mask.iter()).map(|(v, m)| v * m).collect();
     let shape = x.shape().to_vec();
     if x.requires_grad() {
         Tensor::from_op(
@@ -2199,7 +2270,13 @@ impl GradFn for ClampBackward {
             let d: Vec<f32> = g
                 .iter()
                 .zip(src.iter())
-                .map(|(&gi, &xi)| if xi > self.min && xi < self.max { gi } else { 0.0 })
+                .map(|(&gi, &xi)| {
+                    if xi > self.min && xi < self.max {
+                        gi
+                    } else {
+                        0.0
+                    }
+                })
                 .collect();
             self.input.accumulate_grad(&d);
         }
@@ -2228,6 +2305,130 @@ pub fn clamp(x: &Tensor, min: f32, max: f32) -> Tensor {
         )
     } else {
         Tensor::from_vec(data, &shape)
+    }
+}
+
+// ── permute_4d ────────────────────────────────────────────────────────────────
+
+fn permute_4d_data(src: &[f32], in_shape: &[usize; 4], axes: &[usize; 4]) -> Vec<f32> {
+    let out_shape = [
+        in_shape[axes[0]],
+        in_shape[axes[1]],
+        in_shape[axes[2]],
+        in_shape[axes[3]],
+    ];
+    let in_strides = [
+        in_shape[1] * in_shape[2] * in_shape[3],
+        in_shape[2] * in_shape[3],
+        in_shape[3],
+        1,
+    ];
+    let out_strides = [
+        out_shape[1] * out_shape[2] * out_shape[3],
+        out_shape[2] * out_shape[3],
+        out_shape[3],
+        1,
+    ];
+    let mut out = vec![0.0f32; src.len()];
+    for i0 in 0..out_shape[0] {
+        for i1 in 0..out_shape[1] {
+            for i2 in 0..out_shape[2] {
+                for i3 in 0..out_shape[3] {
+                    let out_idx =
+                        i0 * out_strides[0] + i1 * out_strides[1] + i2 * out_strides[2] + i3;
+                    let in_coords = [i0, i1, i2, i3];
+                    let mut in_idx_coords = [0usize; 4];
+                    for k in 0..4 {
+                        in_idx_coords[axes[k]] = in_coords[k];
+                    }
+                    let in_idx = in_idx_coords[0] * in_strides[0]
+                        + in_idx_coords[1] * in_strides[1]
+                        + in_idx_coords[2] * in_strides[2]
+                        + in_idx_coords[3];
+                    out[out_idx] = src[in_idx];
+                }
+            }
+        }
+    }
+    out
+}
+
+fn inverse_axes(axes: [usize; 4]) -> [usize; 4] {
+    let mut inv = [0usize; 4];
+    for (i, &ax) in axes.iter().enumerate() {
+        inv[ax] = i;
+    }
+    inv
+}
+
+struct Permute4dBackward {
+    input: Tensor,
+    axes: [usize; 4],
+    in_shape: [usize; 4],
+}
+
+impl GradFn for Permute4dBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+    fn backward(&self, grad_output: &[f32]) {
+        if self.input.requires_grad() {
+            let out_shape = [
+                self.in_shape[self.axes[0]],
+                self.in_shape[self.axes[1]],
+                self.in_shape[self.axes[2]],
+                self.in_shape[self.axes[3]],
+            ];
+            let inv = inverse_axes(self.axes);
+            let grad_in = permute_4d_data(grad_output, &out_shape, &inv);
+            self.input.accumulate_grad(&grad_in);
+        }
+    }
+}
+
+/// Permutes the axes of a 4-D tensor.
+///
+/// `axes` must be a permutation of `[0, 1, 2, 3]`. The output shape is
+/// `[in_shape[axes[0]], in_shape[axes[1]], in_shape[axes[2]], in_shape[axes[3]]]`.
+///
+/// # Panics
+/// Panics if `x` is not 4-D or `axes` is not a permutation of `[0,1,2,3]`.
+#[must_use]
+pub fn permute_4d(x: &Tensor, axes: [usize; 4]) -> Tensor {
+    let s = x.shape();
+    assert_eq!(
+        s.len(),
+        4,
+        "permute_4d: expected 4-D tensor, got {}D",
+        s.len()
+    );
+    let mut seen = [false; 4];
+    for &ax in &axes {
+        assert!(ax < 4, "permute_4d: axis {ax} out of range");
+        assert!(!seen[ax], "permute_4d: duplicate axis {ax}");
+        seen[ax] = true;
+    }
+    let in_shape = [s[0], s[1], s[2], s[3]];
+    let out_shape = [
+        in_shape[axes[0]],
+        in_shape[axes[1]],
+        in_shape[axes[2]],
+        in_shape[axes[3]],
+    ];
+    let src = x.data();
+    let data = permute_4d_data(&src, &in_shape, &axes);
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &out_shape,
+            Arc::new(Permute4dBackward {
+                input: x.clone(),
+                axes,
+                in_shape,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &out_shape)
     }
 }
 
@@ -2269,5 +2470,64 @@ mod tests {
         let b = Tensor::zeros(&[16]);
         let y = conv2d(&x, &w, &b, 1);
         assert_eq!(y.shape(), &[1, 16, 8, 8]);
+    }
+
+    #[test]
+    fn matmul_batched_backward_gradients() {
+        // a: [2, 2, 3],  b: [2, 3, 2]
+        let a_data = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, // batch 0
+            7.0, 8.0, 9.0, 10.0, 11.0, 12.0, // batch 1
+        ];
+        let b_data = vec![
+            1.0, 0.0, 0.0, 1.0, 1.0, 1.0, // batch 0
+            2.0, 0.0, 0.0, 2.0, 1.0, 1.0, // batch 1
+        ];
+        let a = Tensor::from_vec(a_data, &[2, 2, 3]).with_grad();
+        let b = Tensor::from_vec(b_data, &[2, 3, 2]).with_grad();
+        let c = matmul_batched(&a, &b); // [2, 2, 2]
+                                        // sum all elements as scalar loss
+        let loss = sum(&c);
+        loss.backward();
+        // da[bi] = ones_grad @ b[bi].T  (grad of c is all-ones [2,2])
+        // For batch 0: [[1,1],[1,1]] @ [[1,0,1],[0,1,1]] = [[1,1,2],[1,1,2]]
+        let da = a.grad();
+        assert!((da[0] - 1.0).abs() < 1e-5, "da[0] = {}", da[0]);
+        assert!((da[1] - 1.0).abs() < 1e-5, "da[1] = {}", da[1]);
+        assert!((da[2] - 2.0).abs() < 1e-5, "da[2] = {}", da[2]);
+    }
+
+    #[test]
+    fn permute_4d_shape() {
+        let x = Tensor::from_vec((0..24).map(|v| v as f32).collect(), &[2, 3, 4, 1]);
+        let y = permute_4d(&x, [0, 2, 1, 3]);
+        assert_eq!(y.shape(), &[2, 4, 3, 1]);
+    }
+
+    #[test]
+    fn permute_4d_roundtrip() {
+        let data: Vec<f32> = (0..24).map(|v| v as f32).collect();
+        let x = Tensor::from_vec(data.clone(), &[2, 3, 4, 1]);
+        let axes = [0usize, 2, 1, 3];
+        let inv = {
+            let mut inv = [0usize; 4];
+            for (i, &ax) in axes.iter().enumerate() {
+                inv[ax] = i;
+            }
+            inv
+        };
+        let y = permute_4d(&permute_4d(&x, axes), inv);
+        assert_eq!(y.data(), data);
+    }
+
+    #[test]
+    fn permute_4d_gradient_flows() {
+        let x = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2, 1])
+            .with_grad();
+        let y = permute_4d(&x, [0, 2, 1, 3]); // [2,2,2,1] → [2,2,2,1] (swap axes 1 and 2)
+        let loss = sum(&y);
+        loss.backward();
+        // gradient of a sum-of-all-elements through a permute is all-ones
+        assert!(x.grad().iter().all(|&g| (g - 1.0).abs() < 1e-6));
     }
 }
