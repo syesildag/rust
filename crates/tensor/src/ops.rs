@@ -1233,7 +1233,7 @@ impl GradFn for Conv2dBackward {
         }
         if self.input.requires_grad() {
             // d_cols = g_mat @ weight  ([N*HW, C_out] @ [C_out, col_cols] = [N*HW, col_cols])
-            let d_cols = matmul_2d(&g_mat, &w_data, n * col_rows, c_out, col_cols);
+            let d_cols = matmul_2d(&g_mat, w_data, n * col_rows, c_out, col_cols);
             let d_input = col2im(
                 &d_cols, n, self.c_in, self.h, self.w, self.kh, self.kw, self.pad, h_out, w_out,
             );
@@ -1318,6 +1318,18 @@ pub fn conv2d(input: &Tensor, weight: &Tensor, bias: &Tensor, padding: usize) ->
 
 // ── batch_norm_2d ─────────────────────────────────────────────────────────────
 
+struct ChanGrad {
+    gamma: f32,
+    beta: f32,
+    input: Vec<f32>, // [n*h*w] channel slice; empty if input needs no grad
+}
+
+struct ChanFwd {
+    data: Vec<f32>,  // [n*h*w] channel output
+    x_hat: Vec<f32>, // [n*h*w] normalised values
+    inv_std: f32,
+}
+
 struct BatchNorm2dBackward {
     input: Tensor,
     gamma: Tensor,
@@ -1337,12 +1349,6 @@ impl GradFn for BatchNorm2dBackward {
     fn backward(&self, g: &[f32]) {
         let (n, c, h, w) = (self.n, self.c, self.h, self.w);
         let m = (n * h * w) as f32;
-
-        struct ChanGrad {
-            d_gamma: f32,
-            d_beta: f32,
-            d_input: Vec<f32>, // [n*h*w] channel slice; empty if input needs no grad
-        }
 
         let chan_grads: Vec<ChanGrad> = (0..c)
             .into_par_iter()
@@ -1395,7 +1401,7 @@ impl GradFn for BatchNorm2dBackward {
                     Vec::new()
                 };
 
-                ChanGrad { d_gamma: d_gamma_ci, d_beta: d_beta_ci, d_input: d_input_ci }
+                ChanGrad { gamma: d_gamma_ci, beta: d_beta_ci, input: d_input_ci }
             })
             .collect();
 
@@ -1407,7 +1413,7 @@ impl GradFn for BatchNorm2dBackward {
                         for wi in 0..w {
                             let flat = ni * h * w + hi * w + wi;
                             let idx = ni * c * h * w + ci * h * w + hi * w + wi;
-                            d_input[idx] = cg.d_input[flat];
+                            d_input[idx] = cg.input[flat];
                         }
                     }
                 }
@@ -1415,11 +1421,11 @@ impl GradFn for BatchNorm2dBackward {
             self.input.accumulate_grad(&d_input);
         }
         if self.gamma.requires_grad() {
-            let d_gamma: Vec<f32> = chan_grads.iter().map(|cg| cg.d_gamma).collect();
+            let d_gamma: Vec<f32> = chan_grads.iter().map(|cg| cg.gamma).collect();
             self.gamma.accumulate_grad(&d_gamma);
         }
         if self.beta.requires_grad() {
-            let d_beta: Vec<f32> = chan_grads.iter().map(|cg| cg.d_beta).collect();
+            let d_beta: Vec<f32> = chan_grads.iter().map(|cg| cg.beta).collect();
             self.beta.accumulate_grad(&d_beta);
         }
     }
@@ -1446,11 +1452,6 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
     let gamma_data = gamma.data();
     let beta_data = beta.data();
     let m = (n * h * w) as f32;
-    struct ChanFwd {
-        data: Vec<f32>,  // [n*h*w] channel output
-        x_hat: Vec<f32>, // [n*h*w] normalised values
-        inv_std: f32,
-    }
 
     let chan_results: Vec<ChanFwd> = (0..c)
         .into_par_iter()
