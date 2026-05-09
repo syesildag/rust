@@ -68,7 +68,11 @@ impl MultiHeadAttention {
                 let query = ops::slice_cols(&q_all, start, end); // [seq, d_k]
                 let key = ops::slice_cols(&k_all, start, end);
                 let val = ops::slice_cols(&v_all, start, end);
-                let scores = ops::clamp(&ops::mul_scalar(&ops::matmul(&query, &key.t()), scale), -30.0, 30.0);
+                let scores = ops::clamp(
+                    &ops::mul_scalar(&ops::matmul(&query, &key.t()), scale),
+                    -30.0,
+                    30.0,
+                );
                 let attn = ops::softmax(&scores);
                 ops::matmul(&attn, &val) // [seq, d_k]
             })
@@ -99,12 +103,21 @@ impl MultiHeadAttention {
         let v_all = self.wv.forward(&x_2d);
 
         // Reshape to [B, S, H, d_k] → permute [B, H, S, d_k] → reshape [B*H, S, d_k]
-        let q = ops::permute_4d(&q_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3])
-            .reshape(&[batch * h, seq, d_k]);
-        let k = ops::permute_4d(&k_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3])
-            .reshape(&[batch * h, seq, d_k]);
-        let v = ops::permute_4d(&v_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3])
-            .reshape(&[batch * h, seq, d_k]);
+        let q = ops::permute_4d(&q_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3]).reshape(&[
+            batch * h,
+            seq,
+            d_k,
+        ]);
+        let k = ops::permute_4d(&k_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3]).reshape(&[
+            batch * h,
+            seq,
+            d_k,
+        ]);
+        let v = ops::permute_4d(&v_all.reshape(&[batch, seq, h, d_k]), [0, 2, 1, 3]).reshape(&[
+            batch * h,
+            seq,
+            d_k,
+        ]);
 
         // Single batched matmul for scores: [B*H, S, d_k] × [B*H, d_k, S] → [B*H, S, S]
         let kt = ops::transpose_last_two(&k);
@@ -115,8 +128,8 @@ impl MultiHeadAttention {
         );
 
         // Softmax row-wise then context: [B*H, S, S] × [B*H, S, d_k] → [B*H, S, d_k]
-        let attn = ops::softmax(&scores.reshape(&[batch * h * seq, seq]))
-            .reshape(&[batch * h, seq, seq]);
+        let attn =
+            ops::softmax(&scores.reshape(&[batch * h * seq, seq])).reshape(&[batch * h, seq, seq]);
         let ctx = ops::matmul_batched(&attn, &v); // [B*H, S, d_k]
 
         // Unpack: [B*H, S, d_k] → [B, H, S, d_k] → permute [B, S, H, d_k] → [B*S, D]
@@ -152,7 +165,9 @@ mod tests {
         let seq = 3;
         let d_model = 4;
         let x = Tensor::from_vec(
-            (0..(batch * seq * d_model)).map(|v| v as f32 * 0.01).collect(),
+            (0..(batch * seq * d_model))
+                .map(|v| v as f32 * 0.01)
+                .collect(),
             &[batch, seq, d_model],
         );
         let out = mha.forward_batched(&x, batch);

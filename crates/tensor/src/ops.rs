@@ -1441,7 +1441,11 @@ impl GradFn for BatchNorm2dBackward {
                     Vec::new()
                 };
 
-                ChanGrad { gamma: d_gamma_ci, beta: d_beta_ci, input: d_input_ci }
+                ChanGrad {
+                    gamma: d_gamma_ci,
+                    beta: d_beta_ci,
+                    input: d_input_ci,
+                }
             })
             .collect();
 
@@ -1529,7 +1533,11 @@ pub fn batch_norm_2d(input: &Tensor, gamma: &Tensor, beta: &Tensor, eps: f32) ->
                     }
                 }
             }
-            ChanFwd { data: data_c, x_hat: x_hat_c, inv_std }
+            ChanFwd {
+                data: data_c,
+                x_hat: x_hat_c,
+                inv_std,
+            }
         })
         .collect();
 
@@ -2229,11 +2237,7 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
         .iter()
         .map(|_| if rng.gen::<f32>() < p { 0.0 } else { scale })
         .collect();
-    let data: Vec<f32> = x_data
-        .iter()
-        .zip(mask.iter())
-        .map(|(v, m)| v * m)
-        .collect();
+    let data: Vec<f32> = x_data.iter().zip(mask.iter()).map(|(v, m)| v * m).collect();
     let shape = x.shape().to_vec();
     if x.requires_grad() {
         Tensor::from_op(
@@ -2266,7 +2270,13 @@ impl GradFn for ClampBackward {
             let d: Vec<f32> = g
                 .iter()
                 .zip(src.iter())
-                .map(|(&gi, &xi)| if xi > self.min && xi < self.max { gi } else { 0.0 })
+                .map(|(&gi, &xi)| {
+                    if xi > self.min && xi < self.max {
+                        gi
+                    } else {
+                        0.0
+                    }
+                })
                 .collect();
             self.input.accumulate_grad(&d);
         }
@@ -2386,7 +2396,12 @@ impl GradFn for Permute4dBackward {
 #[must_use]
 pub fn permute_4d(x: &Tensor, axes: [usize; 4]) -> Tensor {
     let s = x.shape();
-    assert_eq!(s.len(), 4, "permute_4d: expected 4-D tensor, got {}D", s.len());
+    assert_eq!(
+        s.len(),
+        4,
+        "permute_4d: expected 4-D tensor, got {}D",
+        s.len()
+    );
     let mut seen = [false; 4];
     for &ax in &axes {
         assert!(ax < 4, "permute_4d: axis {ax} out of range");
@@ -2394,14 +2409,23 @@ pub fn permute_4d(x: &Tensor, axes: [usize; 4]) -> Tensor {
         seen[ax] = true;
     }
     let in_shape = [s[0], s[1], s[2], s[3]];
-    let out_shape = [in_shape[axes[0]], in_shape[axes[1]], in_shape[axes[2]], in_shape[axes[3]]];
+    let out_shape = [
+        in_shape[axes[0]],
+        in_shape[axes[1]],
+        in_shape[axes[2]],
+        in_shape[axes[3]],
+    ];
     let src = x.data();
     let data = permute_4d_data(&src, &in_shape, &axes);
     if x.requires_grad() {
         Tensor::from_op(
             data,
             &out_shape,
-            Arc::new(Permute4dBackward { input: x.clone(), axes, in_shape }),
+            Arc::new(Permute4dBackward {
+                input: x.clone(),
+                axes,
+                in_shape,
+            }),
         )
     } else {
         Tensor::from_vec(data, &out_shape)
@@ -2452,17 +2476,17 @@ mod tests {
     fn matmul_batched_backward_gradients() {
         // a: [2, 2, 3],  b: [2, 3, 2]
         let a_data = vec![
-            1.0, 2.0, 3.0,  4.0, 5.0, 6.0,   // batch 0
-            7.0, 8.0, 9.0, 10.0,11.0,12.0,   // batch 1
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, // batch 0
+            7.0, 8.0, 9.0, 10.0, 11.0, 12.0, // batch 1
         ];
         let b_data = vec![
-            1.0, 0.0,  0.0, 1.0,  1.0, 1.0,  // batch 0
-            2.0, 0.0,  0.0, 2.0,  1.0, 1.0,  // batch 1
+            1.0, 0.0, 0.0, 1.0, 1.0, 1.0, // batch 0
+            2.0, 0.0, 0.0, 2.0, 1.0, 1.0, // batch 1
         ];
         let a = Tensor::from_vec(a_data, &[2, 2, 3]).with_grad();
         let b = Tensor::from_vec(b_data, &[2, 3, 2]).with_grad();
-        let c = matmul_batched(&a, &b);  // [2, 2, 2]
-        // sum all elements as scalar loss
+        let c = matmul_batched(&a, &b); // [2, 2, 2]
+                                        // sum all elements as scalar loss
         let loss = sum(&c);
         loss.backward();
         // da[bi] = ones_grad @ b[bi].T  (grad of c is all-ones [2,2])
@@ -2487,7 +2511,9 @@ mod tests {
         let axes = [0usize, 2, 1, 3];
         let inv = {
             let mut inv = [0usize; 4];
-            for (i, &ax) in axes.iter().enumerate() { inv[ax] = i; }
+            for (i, &ax) in axes.iter().enumerate() {
+                inv[ax] = i;
+            }
             inv
         };
         let y = permute_4d(&permute_4d(&x, axes), inv);
