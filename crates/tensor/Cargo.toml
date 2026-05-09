@@ -6,6 +6,9 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[lib]
+bench = false
+
 [dependencies]
 wgpu = "25"
 pollster = "0.3"
@@ -14,3 +17,14 @@ rand = "0.8"
 rand_distr = "0.4"
 rayon.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "ops"
+harness = false
+
+[[bench]]
+name = "attention"
+harness = false
