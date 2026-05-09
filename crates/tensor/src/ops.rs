@@ -2298,6 +2298,116 @@ pub fn clamp(x: &Tensor, min: f32, max: f32) -> Tensor {
     }
 }
 
+// ── permute_4d ────────────────────────────────────────────────────────────────
+
+fn permute_4d_data(src: &[f32], in_shape: &[usize; 4], axes: &[usize; 4]) -> Vec<f32> {
+    let out_shape = [
+        in_shape[axes[0]],
+        in_shape[axes[1]],
+        in_shape[axes[2]],
+        in_shape[axes[3]],
+    ];
+    let in_strides = [
+        in_shape[1] * in_shape[2] * in_shape[3],
+        in_shape[2] * in_shape[3],
+        in_shape[3],
+        1,
+    ];
+    let out_strides = [
+        out_shape[1] * out_shape[2] * out_shape[3],
+        out_shape[2] * out_shape[3],
+        out_shape[3],
+        1,
+    ];
+    let mut out = vec![0.0f32; src.len()];
+    for i0 in 0..out_shape[0] {
+        for i1 in 0..out_shape[1] {
+            for i2 in 0..out_shape[2] {
+                for i3 in 0..out_shape[3] {
+                    let out_idx =
+                        i0 * out_strides[0] + i1 * out_strides[1] + i2 * out_strides[2] + i3;
+                    let in_coords = [i0, i1, i2, i3];
+                    let mut in_idx_coords = [0usize; 4];
+                    for k in 0..4 {
+                        in_idx_coords[axes[k]] = in_coords[k];
+                    }
+                    let in_idx = in_idx_coords[0] * in_strides[0]
+                        + in_idx_coords[1] * in_strides[1]
+                        + in_idx_coords[2] * in_strides[2]
+                        + in_idx_coords[3];
+                    out[out_idx] = src[in_idx];
+                }
+            }
+        }
+    }
+    out
+}
+
+fn inverse_axes(axes: [usize; 4]) -> [usize; 4] {
+    let mut inv = [0usize; 4];
+    for (i, &ax) in axes.iter().enumerate() {
+        inv[ax] = i;
+    }
+    inv
+}
+
+struct Permute4dBackward {
+    input: Tensor,
+    axes: [usize; 4],
+    in_shape: [usize; 4],
+}
+
+impl GradFn for Permute4dBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+    fn backward(&self, grad_output: &[f32]) {
+        if self.input.requires_grad() {
+            let out_shape = [
+                self.in_shape[self.axes[0]],
+                self.in_shape[self.axes[1]],
+                self.in_shape[self.axes[2]],
+                self.in_shape[self.axes[3]],
+            ];
+            let inv = inverse_axes(self.axes);
+            let grad_in = permute_4d_data(grad_output, &out_shape, &inv);
+            self.input.accumulate_grad(&grad_in);
+        }
+    }
+}
+
+/// Permutes the axes of a 4-D tensor.
+///
+/// `axes` must be a permutation of `[0, 1, 2, 3]`. The output shape is
+/// `[in_shape[axes[0]], in_shape[axes[1]], in_shape[axes[2]], in_shape[axes[3]]]`.
+///
+/// # Panics
+/// Panics if `x` is not 4-D or `axes` is not a permutation of `[0,1,2,3]`.
+#[must_use]
+pub fn permute_4d(x: &Tensor, axes: [usize; 4]) -> Tensor {
+    let s = x.shape();
+    assert_eq!(s.len(), 4, "permute_4d: expected 4-D tensor, got {}D", s.len());
+    let mut seen = [false; 4];
+    for &ax in &axes {
+        assert!(ax < 4, "permute_4d: axis {ax} out of range");
+        assert!(!seen[ax], "permute_4d: duplicate axis {ax}");
+        seen[ax] = true;
+    }
+    let in_shape = [s[0], s[1], s[2], s[3]];
+    let out_shape = [in_shape[axes[0]], in_shape[axes[1]], in_shape[axes[2]], in_shape[axes[3]]];
+    let src = x.data();
+    let data = permute_4d_data(&src, &in_shape, &axes);
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &out_shape,
+            Arc::new(Permute4dBackward { input: x.clone(), axes, in_shape }),
+        )
+    } else {
+        Tensor::from_vec(data, &out_shape)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2361,5 +2471,37 @@ mod tests {
         assert!((da[0] - 1.0).abs() < 1e-5, "da[0] = {}", da[0]);
         assert!((da[1] - 1.0).abs() < 1e-5, "da[1] = {}", da[1]);
         assert!((da[2] - 2.0).abs() < 1e-5, "da[2] = {}", da[2]);
+    }
+
+    #[test]
+    fn permute_4d_shape() {
+        let x = Tensor::from_vec((0..24).map(|v| v as f32).collect(), &[2, 3, 4, 1]);
+        let y = permute_4d(&x, [0, 2, 1, 3]);
+        assert_eq!(y.shape(), &[2, 4, 3, 1]);
+    }
+
+    #[test]
+    fn permute_4d_roundtrip() {
+        let data: Vec<f32> = (0..24).map(|v| v as f32).collect();
+        let x = Tensor::from_vec(data.clone(), &[2, 3, 4, 1]);
+        let axes = [0usize, 2, 1, 3];
+        let inv = {
+            let mut inv = [0usize; 4];
+            for (i, &ax) in axes.iter().enumerate() { inv[ax] = i; }
+            inv
+        };
+        let y = permute_4d(&permute_4d(&x, axes), inv);
+        assert_eq!(y.data(), data);
+    }
+
+    #[test]
+    fn permute_4d_gradient_flows() {
+        let x = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2, 1])
+            .with_grad();
+        let y = permute_4d(&x, [0, 2, 1, 3]); // [2,2,2,1] → [2,2,2,1] (swap axes 1 and 2)
+        let loss = sum(&y);
+        loss.backward();
+        // gradient of a sum-of-all-elements through a permute is all-ones
+        assert!(x.grad().iter().all(|&g| (g - 1.0).abs() < 1e-6));
     }
 }
