@@ -2,7 +2,6 @@
 .env
 data/
 selfplay/
-.worktrees/
 librust_out.rlib
 model.bin
 profile.json
