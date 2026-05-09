@@ -48,7 +48,7 @@ gfn.backward(&guard);
 
 - **Add `gamma_data: Vec<f32>`** to the struct, populated at forward time. Eliminates `self.gamma.data()` (RwLock + clone) on every backward call.
 - **Eliminate per-channel temp Vecs** (`x_hat_c`, `g_c`): replaced by direct strided indexing into `saved_x_hat` and `g` using `idx = ni * c * h * w + ci * h * w + hi * w + wi`.
-- **Parallelize channel loop** with `(0..c).into_par_iter()`: each channel's contribution to `d_input`, `d_gamma`, `d_beta` is independent. Partial `d_input` slices are computed per channel and merged after the parallel section.
+- **Parallelize channel loop** with `(0..c).into_par_iter()`: each channel writes to non-overlapping strides of `d_input` (channel `ci` owns elements where `(idx / (h*w)) % c == ci`), so writes are safe in-place with `par_iter_mut`. `d_gamma` and `d_beta` are per-channel scalars, collected into a Vec and accumulated after the parallel section.
 
 #### 2b. `BatchNorm2d` forward
 
