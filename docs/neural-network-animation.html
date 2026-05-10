@@ -297,6 +297,113 @@ html, body {
   background: rgba(129,140,248,0.2);
   box-shadow: 0 0 14px rgba(129,140,248,0.22);
 }
+.info-btn.cnn {
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.28);
+  color: #f59e0b;
+}
+.info-btn.cnn:hover {
+  background: rgba(245,158,11,0.18);
+  box-shadow: 0 0 14px rgba(245,158,11,0.22);
+}
+
+/* ── BatchNorm modal — amber/CNN accent ─────────── */
+#bn-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#bn-modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+#bn-modal-overlay .modal-box {
+  border-color: rgba(245,158,11,0.32);
+  box-shadow: 0 0 80px rgba(245,158,11,0.10);
+}
+#bn-modal-overlay .modal-tab.active {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+#bn-modal-overlay .modal-tab:hover {
+  background: rgba(245,158,11,0.10);
+  color: #fcd34d;
+}
+#bn-modal-overlay .modal-formula {
+  background: rgba(245,158,11,0.06);
+  border-color: rgba(245,158,11,0.22);
+  color: #fcd34d;
+}
+#bn-modal-overlay .modal-page-title { color: #fcd34d; }
+.bn { color: #f59e0b; font-weight: 700; }
+.relu { color: #fb923c; font-weight: 700; }
+.gamma { color: #fbbf24; font-weight: 700; }
+.beta-c { color: #fde68a; font-weight: 700; }
+
+/* ── MSE Loss modal — rose accent ───────────────── */
+#mse-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#mse-modal-overlay.open { opacity: 1; pointer-events: auto; }
+#mse-modal-overlay .modal-box { border-color: rgba(244,63,94,0.32); box-shadow: 0 0 80px rgba(244,63,94,0.10); }
+#mse-modal-overlay .modal-tab.active { background: rgba(244,63,94,0.15); color: #f43f5e; }
+#mse-modal-overlay .modal-tab:hover  { background: rgba(244,63,94,0.10); color: #fb7185; }
+#mse-modal-overlay .modal-formula    { background: rgba(244,63,94,0.06); border-color: rgba(244,63,94,0.22); color: #fda4af; }
+#mse-modal-overlay .modal-page-title { color: #fda4af; }
+.rose  { color: #f43f5e; font-weight: 700; }
+.pred  { color: #fb923c; font-weight: 700; }
+.tgt   { color: #34d399; font-weight: 700; }
+
+/* ── Backprop modal — violet accent ─────────────── */
+#bp-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#bp-modal-overlay.open { opacity: 1; pointer-events: auto; }
+#bp-modal-overlay .modal-box { border-color: rgba(167,139,250,0.32); box-shadow: 0 0 80px rgba(167,139,250,0.10); }
+#bp-modal-overlay .modal-tab.active { background: rgba(167,139,250,0.15); color: #a78bfa; }
+#bp-modal-overlay .modal-tab:hover  { background: rgba(167,139,250,0.10); color: #c4b5fd; }
+#bp-modal-overlay .modal-formula    { background: rgba(167,139,250,0.06); border-color: rgba(167,139,250,0.22); color: #c4b5fd; }
+#bp-modal-overlay .modal-page-title { color: #c4b5fd; }
+.grad  { color: #a78bfa; font-weight: 700; }
+.chain { color: #e879f9; font-weight: 700; }
+
+/* ── Adam modal — emerald accent ────────────────── */
+#adam-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#adam-modal-overlay.open { opacity: 1; pointer-events: auto; }
+#adam-modal-overlay .modal-box { border-color: rgba(16,185,129,0.32); box-shadow: 0 0 80px rgba(16,185,129,0.10); }
+#adam-modal-overlay .modal-tab.active { background: rgba(16,185,129,0.15); color: #10b981; }
+#adam-modal-overlay .modal-tab:hover  { background: rgba(16,185,129,0.10); color: #34d399; }
+#adam-modal-overlay .modal-formula    { background: rgba(16,185,129,0.06); border-color: rgba(16,185,129,0.22); color: #6ee7b7; }
+#adam-modal-overlay .modal-page-title { color: #6ee7b7; }
+.adam-m { color: #10b981; font-weight: 700; }
+.adam-v { color: #f59e0b; font-weight: 700; }
+.adam-lr { color: #38bdf8; font-weight: 700; }
+
+/* ── Training-phase info buttons ─────────────────── */
+.info-btn.train-mse  { background: rgba(244,63,94,0.08);  border-color: rgba(244,63,94,0.28);  color: #f43f5e; }
+.info-btn.train-mse:hover  { background: rgba(244,63,94,0.18);  box-shadow: 0 0 14px rgba(244,63,94,0.22); }
+.info-btn.train-bp   { background: rgba(167,139,250,0.08); border-color: rgba(167,139,250,0.28); color: #a78bfa; }
+.info-btn.train-bp:hover   { background: rgba(167,139,250,0.18); box-shadow: 0 0 14px rgba(167,139,250,0.22); }
+.info-btn.train-adam { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.28);  color: #10b981; }
+.info-btn.train-adam:hover { background: rgba(16,185,129,0.18); box-shadow: 0 0 14px rgba(16,185,129,0.22); }
 
 /* ── Canvas click hint badge ─────────────────────── */
 .vis-hint {
@@ -490,6 +597,433 @@ html, body {
  </div><!-- .modal-box -->
 </div><!-- #modal-overlay -->
 
+<!-- ── BatchNorm explanation modal ────────────────── -->
+<div id="bn-modal-overlay" role="dialog" aria-modal="true" aria-label="Batch Normalization explained">
+ <div class="modal-box">
+  <button class="modal-close" id="bn-modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-bn-page="0">What it does</button>
+   <button class="modal-tab" data-bn-page="1">The formula</button>
+   <button class="modal-tab" data-bn-page="2">Why it helps</button>
+   <button class="modal-tab" data-bn-page="3">BN vs LN</button>
+  </div>
+
+  <!-- BN Page 0: What it does -->
+  <div class="modal-page active" id="bn-page-0">
+   <div class="modal-page-title">What Batch Normalization Does</div>
+   <div class="modal-section">
+    <h3>The problem it solves</h3>
+    <p>During training, each Conv2d layer changes its weights. As a result the <em>distribution</em> of activations it feeds into the next layer keeps shifting — a phenomenon called <strong>Internal Covariate Shift</strong>. The next layer must constantly re-adapt to a moving target, slowing convergence and forcing tiny learning rates.</p>
+   </div>
+   <div class="modal-section">
+    <h3>The fix: normalise every channel</h3>
+    <p>After the convolution produces a <span class="bn">256&thinsp;&times;&thinsp;8&thinsp;&times;&thinsp;8</span> output, BatchNorm takes <strong>each of the 256 channels independently</strong> and rescales its values so that, across the current mini-batch, the channel has mean&thinsp;&asymp;&thinsp;0 and variance&thinsp;&asymp;&thinsp;1. It then applies a learned scale <span class="gamma">&gamma;</span> and shift <span class="beta-c">&beta;</span> so the network can undo the normalisation if needed.</p>
+   </div>
+   <div class="modal-section">
+    <h3>What &ldquo;across the batch&rdquo; means here</h3>
+    <p>For a conv output shaped <span class="bn">[B&thinsp;&times;&thinsp;C&thinsp;&times;&thinsp;H&thinsp;&times;&thinsp;W]</span>, BatchNorm computes statistics over <strong>B&thinsp;&times;&thinsp;H&thinsp;&times;&thinsp;W</strong> values — every sample in the batch and every spatial position — <em>separately for each of the C=256 channels</em>. So channel 17&rsquo;s mean and variance are computed from all 8&times;8=64 spatial pixels across all B board positions in the mini-batch.</p>
+   </div>
+  </div>
+
+  <!-- BN Page 1: Formula -->
+  <div class="modal-page" id="bn-page-1">
+   <div class="modal-page-title">The BatchNorm Formula</div>
+   <div class="modal-section">
+    <h3>Four steps per channel c</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span>&mu;<sub>c</sub> &nbsp;= <sup>1</sup>&frasl;<sub>B&sdot;H&sdot;W</sub> &sum; x<sub>b,c,h,w</sub> &emsp;<span class="dim">mean over batch &amp; spatial</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span>&sigma;<sup>2</sup><sub>c</sub> = <sup>1</sup>&frasl;<sub>B&sdot;H&sdot;W</sub> &sum; (x<sub>b,c,h,w</sub> &minus; &mu;<sub>c</sub>)<sup>2</sup> &emsp;<span class="dim">variance</span></span></div>
+     <div class="fstep"><span class="fnum">3.</span><span>x&#x0302;<sub>b,c,h,w</sub> = (x<sub>b,c,h,w</sub> &minus; &mu;<sub>c</sub>) / &radic;(&sigma;<sup>2</sup><sub>c</sub> + &epsilon;) &emsp;<span class="dim">normalise</span></span></div>
+     <div class="fstep"><span class="fnum">4.</span><span>y<sub>b,c,h,w</sub> = <span class="gamma">&gamma;<sub>c</sub></span> &sdot; x&#x0302;<sub>b,c,h,w</sub> + <span class="beta-c">&beta;<sub>c</sub></span> &emsp;<span class="dim">scale &amp; shift (learned)</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Learnable parameters</h3>
+    <p><span class="gamma">&gamma;</span> (scale) and <span class="beta-c">&beta;</span> (shift) are vectors of length C=256 — one scalar per channel. They are trained by backprop. If the network finds that channel 42 should <em>not</em> be normalised, it can set &gamma;<sub>42</sub>&thinsp;&asymp;&thinsp;large and &beta;<sub>42</sub>&thinsp;&asymp;&thinsp;original mean, effectively recovering the pre-normalised signal.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Inference: running statistics</h3>
+    <p>At inference time there may be only a single board position (B=1), so batch statistics would be meaningless. BatchNorm solves this by maintaining <strong>exponential moving averages</strong> of &mu; and &sigma;<sup>2</sup> during training. At inference those frozen running stats replace the per-batch computation, making the layer a fixed affine transform: y = &gamma; &sdot; (x &minus; &mu;<sub>run</sub>) / &sigma;<sub>run</sub> + &beta;.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Parameter count for this layer</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="gamma">&gamma;</span> [256] + <span class="beta-c">&beta;</span> [256] &nbsp;= &nbsp;<strong>512 trainable params</strong></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>running mean [256] + running var [256] &nbsp;= &nbsp;512 <em>buffers</em> (not trained)</span></div>
+    </div>
+   </div>
+  </div>
+
+  <!-- BN Page 2: Why it helps -->
+  <div class="modal-page" id="bn-page-2">
+   <div class="modal-page-title">Why BatchNorm Helps Training</div>
+   <div class="modal-section">
+    <h3>Smoother loss landscape</h3>
+    <p>Research (Santurkar et al., 2018) showed that BatchNorm&rsquo;s primary benefit is not reducing internal covariate shift per se, but <em>smoothing the loss landscape</em>. Normalised activations mean gradient magnitudes are more predictable across layers — the network can take larger, more confident gradient steps without the loss suddenly spiking.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Allows higher learning rates</h3>
+    <p>Without BatchNorm, a high learning rate can push activations into saturation regions where gradients vanish (e.g., large inputs to ReLU produce dead neurons; large inputs to sigmoid produce near-zero gradients). BatchNorm re-centres activations so a much larger range of learning rates is safely usable — typically 5–10&times; higher, cutting training time proportionally.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Mild regularisation effect</h3>
+    <p>Because statistics are computed per mini-batch, the normalisation adds a small amount of noise (the batch mean and variance vary between batches). This acts like a weak regulariser, sometimes reducing the need for Dropout in convolutional networks. The chess CNN uses no Dropout in the backbone — BatchNorm provides enough implicit regularisation.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Interplay with ReLU here</h3>
+    <p>The order Conv &rarr; <span class="bn">BN</span> &rarr; <span class="relu">ReLU</span> matters. BatchNorm centres the conv output around 0 before ReLU sees it. Since ReLU zeros everything &lt; 0, starting from mean&thinsp;&asymp;&thinsp;0 means roughly half the neurons are active on each forward pass — a healthy activation density. If BN came after ReLU, the already-non-negative values would be shifted/scaled unnecessarily.</p>
+   </div>
+  </div>
+
+  <!-- BN Page 3: BN vs LN -->
+  <div class="modal-page" id="bn-page-3">
+   <div class="modal-page-title">BatchNorm vs LayerNorm — Why Each Network Uses Its Own</div>
+   <div class="modal-section">
+    <h3>The key axis of normalisation</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">BN</span><span>Normalise over <strong>B &times; H &times; W</strong> &emsp;<span class="dim">per channel — needs a batch</span></span></div>
+     <div class="fstep"><span class="fnum">LN</span><span>Normalise over <strong>features</strong> &emsp;&emsp;&emsp;<span class="dim">per token — works for B=1</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Why BatchNorm suits the CNN backbone</h3>
+    <p>The CNN processes a mini-batch of 256&times;8&times;8 feature maps. Here <em>channel</em> is the meaningful grouping: channel 42 always represents the same learned feature detector (e.g., &ldquo;pawn chain on the a-file&rdquo;). Normalising across B&times;H&times;W stabilises that detector&rsquo;s output distribution without mixing it with unrelated channels.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why LayerNorm suits the Transformer</h3>
+    <p>The Transformer operates on <em>token sequences</em> of shape [65&times;256]. The meaningful grouping is now the 256 features of a <em>single token</em>. There is no natural spatial dimension to average over, and at inference the sequence length may vary. LayerNorm normalises each token&rsquo;s 256 features independently — no cross-sample statistics needed, so it works identically with B=1.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Summary comparison</h3>
+    <div class="analogy-grid" style="grid-template-columns:1fr 1fr;">
+     <div class="analogy-card">
+      <div class="ltr bn" style="font-size:1rem;">BN</div>
+      <p>Per-channel, needs batch &middot; Ideal for CNNs &middot; Running stats at inference &middot; ~512 params for 256ch</p>
+     </div>
+     <div class="analogy-card">
+      <div class="ltr k" style="font-size:1rem;">LN</div>
+      <p>Per-token, batch-agnostic &middot; Ideal for Transformers &amp; RNNs &middot; Same formula at train/infer &middot; ~512 params for 256-dim</p>
+     </div>
+    </div>
+   </div>
+  </div>
+
+ </div><!-- .modal-box -->
+</div><!-- #bn-modal-overlay -->
+
+<!-- ── MSE Loss explanation modal ─────────────────── -->
+<div id="mse-modal-overlay" role="dialog" aria-modal="true" aria-label="MSE Loss explained">
+ <div class="modal-box">
+  <button class="modal-close" id="mse-modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-mse-page="0">What is MSE?</button>
+   <button class="modal-tab" data-mse-page="1">The formula</button>
+   <button class="modal-tab" data-mse-page="2">Why MSE for chess?</button>
+   <button class="modal-tab" data-mse-page="3">Loss landscape</button>
+  </div>
+
+  <div class="modal-page active" id="mse-page-0">
+   <div class="modal-page-title">What is Mean Squared Error?</div>
+   <div class="modal-section">
+    <h3>The single job of a loss function</h3>
+    <p>After the forward pass produces <span class="pred">ŷ &isin; (&minus;1,&thinsp;+1)</span>, we need a single number that quantifies how wrong the prediction is. This number &mdash; the <em>loss</em> &mdash; must be differentiable so that backpropagation can compute ∂L/∂W for every weight in the network.</p>
+   </div>
+   <div class="modal-section">
+    <h3>MSE in one sentence</h3>
+    <p>MSE measures the <strong>average squared distance</strong> between the network&rsquo;s prediction <span class="pred">ŷ</span> and the true label <span class="tgt">y</span>, averaged over the mini-batch of B positions.</p>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="rose">L</span> = <sup>1</sup>&frasl;<sub>B</sub> &sum;<sub>i=1</sub><sup>B</sup> (<span class="pred">ŷ<sub>i</sub></span> &minus; <span class="tgt">y<sub>i</sub></span>)<sup>2</sup></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Training labels</h3>
+    <p>Labels come from self-play game outcomes: <span class="tgt">y = +1</span> (White wins), <span class="tgt">y = 0</span> (Draw), <span class="tgt">y = &minus;1</span> (Black wins). The same position can appear multiple times in different games with different outcomes &mdash; the network learns the <em>expected</em> outcome, which is a continuous value between &minus;1 and +1.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="mse-page-1">
+   <div class="modal-page-title">The MSE Formula, Step by Step</div>
+   <div class="modal-section">
+    <h3>From one sample to a batch</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span>residual<sub>i</sub> &nbsp;= <span class="pred">ŷ<sub>i</sub></span> &minus; <span class="tgt">y<sub>i</sub></span> &emsp;<span class="dim">signed error for sample i</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span>e<sub>i</sub> &nbsp;= residual<sub>i</sub><sup>2</sup> &emsp;<span class="dim">squared — always &ge; 0, penalises large errors more</span></span></div>
+     <div class="fstep"><span class="fnum">3.</span><span><span class="rose">L</span> = <sup>1</sup>&frasl;<sub>B</sub> &sum;<sub>i</sub> e<sub>i</sub> &emsp;<span class="dim">mean over the batch</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>The gradient of MSE — what backprop gets</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>∂<span class="rose">L</span>/∂<span class="pred">ŷ<sub>i</sub></span> &nbsp;= <sup>2</sup>&frasl;<sub>B</sub> &sdot; (<span class="pred">ŷ<sub>i</sub></span> &minus; <span class="tgt">y<sub>i</sub></span>)</span></div>
+    </div>
+    <p>The gradient is simply <strong>proportional to the residual</strong>. A prediction of +0.8 against a target of &minus;1 gives residual = +1.8 &rarr; a large gradient that pushes the weight update hard. A prediction close to the target gives a small gradient &rarr; small update. This is why MSE training naturally &ldquo;slows down&rdquo; as the network improves.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Squaring vs absolute value</h3>
+    <p>|residual| (MAE) is differentiable everywhere except 0 and treats all errors equally. residual&sup2; (MSE) <strong>amplifies large errors</strong> quadratically &mdash; a residual of 2 contributes 4&times; as much as a residual of 1. For chess, where a completely wrong sign prediction (+1 vs &minus;1) is catastrophic, the extra penalty on large errors is desirable.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="mse-page-2">
+   <div class="modal-page-title">Why MSE for Chess Evaluation?</div>
+   <div class="modal-section">
+    <h3>The output is a continuous regression target</h3>
+    <p>Unlike classification (discrete class probabilities), our output is a real number in (&minus;1,&thinsp;+1). MSE is the natural loss for continuous regression. Cross-entropy would require discretising the outcome into bins, losing the natural ordering (+0.7 is better for White than +0.3).</p>
+   </div>
+   <div class="modal-section">
+    <h3>Noisy labels are fine</h3>
+    <p>Self-play game outcomes are very noisy &mdash; a position that is theoretically +1 might result in a draw due to later mistakes. MSE&rsquo;s averaging over a mini-batch naturally handles this: with enough samples the network learns the <em>expected</em> value. The squared term means occasional catastrophically-wrong game outcomes get appropriately high loss.</p>
+   </div>
+   <div class="modal-section">
+    <h3>tanh output pairs naturally with MSE</h3>
+    <p>The final tanh squashes the linear output into (&minus;1,&thinsp;+1), matching the label range exactly. MSE loss on a tanh output never produces exploding gradients: when the prediction saturates near &plusmn;1, the tanh gradient (1&minus;tanh&sup2;) shrinks, and the MSE gradient (residual) also shrinks because the prediction is near the boundary of the label range.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Alternatives considered</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">MSE</span><span>Smooth, quadratic &rarr; large errors penalised hard &rarr; used here</span></div>
+     <div class="fstep"><span class="fnum">MAE</span><span>Robust to outliers but non-smooth at 0 &rarr; needs careful tuning</span></div>
+     <div class="fstep"><span class="fnum">Huber</span><span>Combination of MAE+MSE &rarr; popular for RL value nets (DQN)</span></div>
+     <div class="fstep"><span class="fnum">CE</span><span>Cross-entropy &rarr; needs discrete classes &rarr; used in policy networks</span></div>
+    </div>
+   </div>
+  </div>
+
+  <div class="modal-page" id="mse-page-3">
+   <div class="modal-page-title">The Loss Landscape</div>
+   <div class="modal-section">
+    <h3>What the landscape is</h3>
+    <p>If you could plot loss L as a function of all ~6M weights simultaneously, you would get a high-dimensional surface. Training is the process of finding a low point on that surface. MSE produces a <strong>smooth, convex landscape locally</strong> around any minimum, which makes gradient descent well-behaved in the final stages of training.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Saddle points and plateaus</h3>
+    <p>In high-dimensional spaces, the loss landscape has many <strong>saddle points</strong> &mdash; directions where the curvature is positive (local min) and others where it is negative (local max). Pure gradient descent can stall here. Adam&rsquo;s per-parameter momentum and variance estimates help escape saddle points faster than SGD.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Batch size and loss estimation</h3>
+    <p>Computing MSE over all training positions at once (full-batch) would give the true gradient but is too slow. With mini-batches of e.g. 512 positions, the gradient is <em>estimated</em>. Smaller batches = noisier estimates = more exploration of the landscape. Larger batches = smoother gradient = more direct descent. The chess network uses moderate batch sizes to balance these effects.</p>
+   </div>
+  </div>
+ </div>
+</div><!-- #mse-modal-overlay -->
+
+<!-- ── Backpropagation modal ────────────────────────── -->
+<div id="bp-modal-overlay" role="dialog" aria-modal="true" aria-label="Backpropagation explained">
+ <div class="modal-box">
+  <button class="modal-close" id="bp-modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-bp-page="0">Chain rule</button>
+   <button class="modal-tab" data-bp-page="1">Gradient flow</button>
+   <button class="modal-tab" data-bp-page="2">Vanishing gradients</button>
+   <button class="modal-tab" data-bp-page="3">Residuals save it</button>
+  </div>
+
+  <div class="modal-page active" id="bp-page-0">
+   <div class="modal-page-title">Backpropagation &amp; the Chain Rule</div>
+   <div class="modal-section">
+    <h3>What backprop computes</h3>
+    <p>Backpropagation is an efficient algorithm for computing <span class="grad">∂L/∂W</span> for <em>every</em> weight W in the network simultaneously. It applies the <span class="chain">chain rule</span> of calculus, working backwards from the loss to the inputs — one layer at a time — reusing intermediate computations.</p>
+   </div>
+   <div class="modal-section">
+    <h3>The chain rule</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>if L depends on z which depends on W:</span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="grad">∂L/∂W</span> &nbsp;= <span class="grad">∂L/∂z</span> &sdot; <span class="chain">∂z/∂W</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>for a chain of n layers: <span class="grad">∂L/∂W<sub>1</sub></span> = <span class="grad">∂L/∂a<sub>n</sub></span> &sdot; <span class="chain">∂a<sub>n</sub>/∂a<sub>n-1</sub></span> &sdot; &hellip; &sdot; <span class="chain">∂a<sub>2</sub>/∂W<sub>1</sub></span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Why backprop is efficient</h3>
+    <p>A na&iuml;ve implementation would recompute the chain for every weight separately — O(parameters &times; layers) cost. Backprop instead makes <strong>one backwards pass</strong>: it computes <span class="grad">∂L/∂a<sub>k</sub></span> for each layer&rsquo;s pre-activation a<sub>k</sub>, caches it, and then all weights at that layer share the same cached upstream gradient. Total cost: one forward pass + one backward pass.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Step through this network</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">←</span><span>Loss &nbsp;&larr;&nbsp; <span class="grad">∂L/∂ŷ = 2(ŷ − y)/B</span></span></div>
+     <div class="fstep"><span class="fnum">←</span><span>tanh &larr;&nbsp; multiply by <span class="chain">(1 − tanh²)</span></span></div>
+     <div class="fstep"><span class="fnum">←</span><span>Linear(256→1) &larr;&nbsp; gradient w.r.t. 256 weights</span></div>
+     <div class="fstep"><span class="fnum">←</span><span>Transformer ×4 &larr;&nbsp; through LN, FFN, MHA residuals</span></div>
+     <div class="fstep"><span class="fnum">←</span><span>CNN backbone &larr;&nbsp; through 8 residual blocks</span></div>
+    </div>
+   </div>
+  </div>
+
+  <div class="modal-page" id="bp-page-1">
+   <div class="modal-page-title">Gradient Flow Through Each Layer</div>
+   <div class="modal-section">
+    <h3>tanh gradient</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>d/dx tanh(x) &nbsp;= 1 &minus; tanh²(x) &emsp;<span class="dim">range (0, 1]</span></span></div>
+    </div>
+    <p>Near saturation (|x| large), tanh gradient &rarr; 0. But since the linear layer before tanh outputs a raw scalar and the labels are in (&minus;1,+1), the output rarely saturates during training — gradient stays near 1.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Linear layer gradient</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>∂L/∂W = <span class="grad">δ</span> &sdot; x<sup>T</sup> &emsp;<span class="dim">outer product of upstream gradient and input</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>∂L/∂x = W<sup>T</sup> &sdot; <span class="grad">δ</span> &emsp;<span class="dim">gradient passed to previous layer</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>LayerNorm gradient</h3>
+    <p>LayerNorm normalises across 256 features, so its gradient couples all 256 dimensions together. The learnable &gamma;/&beta; parameters receive <span class="grad">∂L/∂&gamma;<sub>c</sub> = &sum;<sub>b</sub> δ<sub>b,c</sub> &sdot; x̂<sub>b,c</sub></span> — summed over the batch. This is why LayerNorm parameters update quickly despite being only 512 params: every position in every batch contributes to their gradient.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Attention gradient (key insight)</h3>
+    <p>The attention score S = QK<sup>T</sup>/&radic;d<sub>k</sub> involves a <em>matrix multiplication</em> and <em>softmax</em>. The softmax Jacobian is ∂softmax/∂S = diag(A) &minus; A·A<sup>T</sup> — a full 65×65 matrix. This is why backprop through attention is memory-intensive: it needs the full attention matrix A cached from the forward pass.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="bp-page-2">
+   <div class="modal-page-title">Vanishing Gradients</div>
+   <div class="modal-section">
+    <h3>The problem in deep networks</h3>
+    <p>Each layer multiplies the gradient by its local Jacobian. If those Jacobians have eigenvalues &lt; 1, the gradient <strong>shrinks exponentially</strong> as it propagates backwards. By layer 1, the gradient may be 10<sup>&minus;8</sup> or smaller — too small to update weights meaningfully. This makes training deep networks nearly impossible without mitigation.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Magnitude analysis for this network</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>Value Head: gradient scale ~1 &emsp;<span class="dim">(tanh derivative ≈ 1 near 0)</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>Transformer ×4: each block adds, doesn&rsquo;t multiply &emsp;<span class="dim">(residuals!)</span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>CNN ×8 blocks: same — output = F(x) + x</span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>Without residuals: ~0.7<sup>20</sup> &asymp; 0.0008 signal left</span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Why sigmoid/tanh as hidden activations were abandoned</h3>
+    <p>Early deep nets used sigmoid or tanh in hidden layers. Their derivative saturates to 0 for large inputs. With 20 hidden layers, the product of 20 near-zero derivatives made the first layers untrainable. ReLU (derivative = 1 for x &gt; 0) fixed this — and residual connections fixed the remaining depth problem.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="bp-page-3">
+   <div class="modal-page-title">How Residual Connections Solve Vanishing Gradients</div>
+   <div class="modal-section">
+    <h3>The residual gradient identity</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>forward: &nbsp;out = F(x) + x</span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>backward: ∂out/∂x = <span class="chain">∂F(x)/∂x</span> + <strong>1</strong></span></div>
+    </div>
+    <p>The <strong>+1</strong> term means the gradient always has a direct highway back through the skip connection, <em>regardless</em> of what F(x) learned. Even if ∂F/∂x shrinks to near zero, the overall gradient stays at least 1.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Applied to this network</h3>
+    <p>Both the CNN backbone (8 residual blocks) and the Transformer (4 blocks, each with two residual adds) use this pattern. The gradient flowing from the value head back to the very first convolution always has an unobstructed path through all the skip connections — even after 20+ sequential operations. This is what makes training a ~6M parameter network feasible.</p>
+   </div>
+   <div class="modal-section">
+    <h3>LayerNorm also helps</h3>
+    <p>LayerNorm normalises the scale of activations entering each sublayer. Without it, residual outputs accumulate scale — after 4 Transformer blocks the activations might have variance 4× the input, pushing downstream layers into saturation. LayerNorm keeps each block&rsquo;s input well-conditioned regardless of depth.</p>
+   </div>
+  </div>
+ </div>
+</div><!-- #bp-modal-overlay -->
+
+<!-- ── Adam Optimizer modal ───────────────────────── -->
+<div id="adam-modal-overlay" role="dialog" aria-modal="true" aria-label="Adam optimizer explained">
+ <div class="modal-box">
+  <button class="modal-close" id="adam-modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-adam-page="0">What Adam does</button>
+   <button class="modal-tab" data-adam-page="1">The algorithm</button>
+   <button class="modal-tab" data-adam-page="2">Hyperparameters</button>
+   <button class="modal-tab" data-adam-page="3">Adam vs SGD</button>
+  </div>
+
+  <div class="modal-page active" id="adam-page-0">
+   <div class="modal-page-title">What Adam Does</div>
+   <div class="modal-section">
+    <h3>The problem with plain gradient descent</h3>
+    <p>Vanilla SGD updates every weight by the same learning rate: &theta; &larr; &theta; &minus; <span class="adam-lr">&alpha;</span> &sdot; <span class="grad">g</span>. Two problems arise: (1) weights with noisy, inconsistent gradients take huge steps in the wrong direction; (2) weights with consistent but small gradients learn too slowly. The optimal learning rate is different for every weight.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Adam&rsquo;s two ideas</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span><strong>Momentum</strong> (<span class="adam-m">m</span>): exponential moving average of gradients. Smooths out noise &mdash; the step direction is a running average, not a single noisy estimate.</span></div>
+     <div class="fstep"><span class="fnum">2.</span><span><strong>Adaptive scale</strong> (<span class="adam-v">v</span>): exponential moving average of gradient<sup>2</sup>. Dividing by &radic;<span class="adam-v">v̂</span> gives a per-weight learning rate: small step for high-variance weights, large step for stable weights.</span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Intuition for chess training</h3>
+    <p>The attention weight matrices receive gradients from 65&times;65 attention patterns — extremely noisy. The value head&rsquo;s single linear layer receives a clean, consistent gradient. Adam automatically gives the attention weights a smaller effective learning rate (their <span class="adam-v">v</span> is large) and the value head a larger one, without any manual per-layer tuning.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="adam-page-1">
+   <div class="modal-page-title">The Adam Algorithm</div>
+   <div class="modal-section">
+    <h3>Per-parameter update (one step t)</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">1.</span><span><span class="grad">g<sub>t</sub></span> &nbsp;= ∂L/∂&theta; &emsp;<span class="dim">gradient from backprop</span></span></div>
+     <div class="fstep"><span class="fnum">2.</span><span><span class="adam-m">m<sub>t</sub></span> = &beta;<sub>1</sub>&sdot;<span class="adam-m">m<sub>t-1</sub></span> + (1&minus;&beta;<sub>1</sub>)&sdot;<span class="grad">g<sub>t</sub></span> &emsp;<span class="dim">1st moment (momentum), &beta;<sub>1</sub>=0.9</span></span></div>
+     <div class="fstep"><span class="fnum">3.</span><span><span class="adam-v">v<sub>t</sub></span> = &beta;<sub>2</sub>&sdot;<span class="adam-v">v<sub>t-1</sub></span> + (1&minus;&beta;<sub>2</sub>)&sdot;<span class="grad">g<sub>t</sub></span><sup>2</sup> &emsp;<span class="dim">2nd moment (variance), &beta;<sub>2</sub>=0.999</span></span></div>
+     <div class="fstep"><span class="fnum">4.</span><span><span class="adam-m">m̂<sub>t</sub></span> = <span class="adam-m">m<sub>t</sub></span>/(1&minus;&beta;<sub>1</sub><sup>t</sup>) &emsp;<span class="dim">bias correction for early steps</span></span></div>
+     <div class="fstep"><span class="fnum">5.</span><span><span class="adam-v">v̂<sub>t</sub></span> = <span class="adam-v">v<sub>t</sub></span>/(1&minus;&beta;<sub>2</sub><sup>t</sup>) &emsp;<span class="dim">bias correction</span></span></div>
+     <div class="fstep"><span class="fnum">6.</span><span>&theta;<sub>t</sub> = &theta;<sub>t-1</sub> &minus; <span class="adam-lr">&alpha;</span> &sdot; <span class="adam-m">m̂<sub>t</sub></span> / (&radic;<span class="adam-v">v̂<sub>t</sub></span> + &epsilon;) &emsp;<span class="dim">weight update</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Why bias correction?</h3>
+    <p>At step 1, <span class="adam-m">m<sub>0</sub></span> and <span class="adam-v">v<sub>0</sub></span> are initialised to zero. Without correction, the first few steps would use heavily under-estimated <span class="adam-m">m</span> and <span class="adam-v">v</span>, leading to unreasonably large updates. The (1&minus;&beta;<sup>t</sup>) denominator grows from near-0 toward 1 as t increases, correcting the initialisation bias. After ~100 steps (for &beta;<sub>1</sub>=0.9), the correction is negligible.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Memory cost</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>Adam stores <span class="adam-m">m</span> and <span class="adam-v">v</span> for every parameter: 3&times; memory vs SGD</span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>~6M params &times; 3 &times; 4 bytes = ~72 MB for optimizer state</span></div>
+    </div>
+   </div>
+  </div>
+
+  <div class="modal-page" id="adam-page-2">
+   <div class="modal-page-title">Adam Hyperparameters</div>
+   <div class="modal-section">
+    <h3>Learning rate &alpha;</h3>
+    <p>Typical default: <span class="adam-lr">&alpha; = 1e&minus;3</span>. The most sensitive hyperparameter. Too high &rarr; loss oscillates or diverges. Too low &rarr; training is very slow. For this chess network, &alpha; is often warmed up (from 0 to peak over the first few thousand steps) then decayed via cosine schedule.</p>
+   </div>
+   <div class="modal-section">
+    <h3>&beta;<sub>1</sub>, &beta;<sub>2</sub> — decay rates</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&beta;<sub>1</sub>=0.9</span><span>Momentum half-life &asymp; 7 steps. Gradient signal has a memory of about 7 recent batches.</span></div>
+     <div class="fstep"><span class="fnum">&beta;<sub>2</sub>=0.999</span><span>Variance half-life &asymp; 700 steps. Variance estimate changes slowly &mdash; stable per-weight scale.</span></div>
+    </div>
+    <p>&beta;<sub>2</sub>=0.999 vs 0.99: a larger &beta;<sub>2</sub> makes the variance estimate more stable (less noisy) but slower to adapt to sudden gradient changes (e.g., after a learning rate increase). For transformers, 0.999 is the community default.</p>
+   </div>
+   <div class="modal-section">
+    <h3>&epsilon; — numerical stability</h3>
+    <p>&epsilon; = 1e&minus;8 prevents division by zero when <span class="adam-v">v̂</span> &asymp; 0. For transformers with fp16 training, &epsilon; is often increased to 1e&minus;6 to avoid numerical issues with half-precision arithmetic. Since this model trains in fp32, 1e&minus;8 is fine.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Weight decay (AdamW)</h3>
+    <p>Standard Adam couples weight decay into the gradient, distorting the adaptive scale. <strong>AdamW</strong> (a common variant) applies weight decay directly to the weights: &theta; &larr; &theta;(1 &minus; &lambda;) &minus; Adam update. This prevents large weights without interfering with Adam&rsquo;s per-parameter scaling, and is the standard for Transformer training.</p>
+   </div>
+  </div>
+
+  <div class="modal-page" id="adam-page-3">
+   <div class="modal-page-title">Adam vs SGD</div>
+   <div class="modal-section">
+    <h3>Why Adam converges faster on Transformers</h3>
+    <p>Transformer attention weights receive gradients that vary wildly across heads and layers. SGD with a global learning rate either overshoots noisy weights or undershoots stable ones. Adam&rsquo;s per-weight learning rate (<span class="adam-lr">&alpha;</span>/&radic;<span class="adam-v">v̂</span>) adapts: it shrinks for noisy weights and grows for stable ones, navigating the loss landscape more efficiently.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Comparison table</h3>
+    <div class="analogy-grid" style="grid-template-columns:1fr 1fr;">
+     <div class="analogy-card">
+      <div class="hn" style="color:#94a3b8">SGD + momentum</div>
+      <p>Simple &middot; Low memory &middot; Often better final accuracy on CNNs &middot; Needs careful LR tuning &middot; Slow on transformers</p>
+     </div>
+     <div class="analogy-card">
+      <div class="hn" style="color:#10b981">Adam</div>
+      <p>3&times; memory &middot; Fast convergence &middot; Default for transformers &middot; Can overfit faster &middot; Good with AdamW + cosine LR</p>
+     </div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Interesting subtlety: CNN backbone uses BN, which changes Adam&rsquo;s behaviour</h3>
+    <p>BatchNorm&rsquo;s normalisation makes the loss surface more isotropic (similar curvature in all directions). On such surfaces, SGD and Adam perform similarly. The Transformer backbone (with LayerNorm) has a more anisotropic landscape — this is where Adam&rsquo;s adaptive scaling gives the biggest advantage over SGD.</p>
+   </div>
+  </div>
+ </div>
+</div><!-- #adam-modal-overlay -->
+
 <script>
 'use strict';
 
@@ -498,6 +1032,7 @@ var PHASES = {
   bridge:      { label: 'Bridge',       color: '#14b8a6' },
   transformer: { label: 'Transformer',  color: '#818cf8' },
   head:        { label: 'Value Head',   color: '#c084fc' },
+  training:    { label: 'Training',     color: '#f43f5e' },
 };
 var HEAD_GOLD = '#fbbf24';
 
@@ -551,6 +1086,21 @@ var STEPS = [
     phase:'head', title:'Full Architecture', shapeIn:null, shapeOut:'value ∈ (−1, +1)',
     desc:'The complete pipeline from a raw board position to a single evaluation score. A CNN backbone extracts local piece patterns, a Bridge converts the spatial grid to a token sequence, and a Transformer lets every square attend to every other before the value head collapses it all to one number.',
     bullets:['CNN: local feature extraction with 3×3 convolutions and skip connections (~5M params)','Bridge + Transformer: global reasoning — every square sees every other square via attention','~6M parameters total · trained end-to-end with MSE against self-play game outcomes'],
+  },
+  {
+    phase:'training', title:'MSE Loss', shapeIn:'ŷ ∈ (−1, +1)', shapeOut:'L = (ŷ − y)²',
+    desc:'After the forward pass the network has a prediction ŷ. The true label y comes from the game outcome (±1 or 0). MSE loss measures the squared distance between them — a differentiable scalar that summarises "how wrong was this batch?".',
+    bullets:['L = (1/B) Σ (ŷᵢ − yᵢ)²  — averaged over the mini-batch','∂L/∂ŷ = 2(ŷ − y)/B  — the gradient that seeds backpropagation','Large residuals are penalised quadratically — wrong-sign predictions hit hard'],
+  },
+  {
+    phase:'training', title:'Backpropagation', shapeIn:'scalar L', shapeOut:'∂L/∂W  for every W',
+    desc:'Backprop runs the chain rule backwards through every layer: from the loss, through tanh, through the value head, through 4 Transformer blocks, through 8 CNN residual blocks — computing ∂L/∂W for all ~6M weights in one efficient backwards pass.',
+    bullets:['Chain rule: ∂L/∂W₁ = ∂L/∂aₙ · ∂aₙ/∂aₙ₋₁ · … · ∂a₂/∂W₁','Residual skip connections guarantee +1 in every layer gradient — no vanishing','Attention matrix A[65×65] must be cached from forward pass for efficient backward'],
+  },
+  {
+    phase:'training', title:'Adam Optimizer', shapeIn:'∂L/∂W', shapeOut:'W ← W − α·m̂/√v̂',
+    desc:'Adam keeps a momentum estimate m (smoothed gradient) and a variance estimate v (smoothed squared gradient) per weight. Dividing by √v̂ gives each weight its own adaptive learning rate — noisy weights take small steps, stable weights take larger ones.',
+    bullets:['m_t = β₁·m_{t-1} + (1−β₁)·g   β₁=0.9  (momentum)','v_t = β₂·v_{t-1} + (1−β₂)·g²  β₂=0.999 (variance)','Update: θ ← θ − α · m̂/( √v̂ + ε )  with bias-corrected m̂, v̂'],
   },
 ];
 
@@ -617,6 +1167,82 @@ STEPS.forEach(function (step, i) {
   txtPane.appendChild(badge); txtPane.appendChild(title);
   txtPane.appendChild(shapeDiv); txtPane.appendChild(desc);
   txtPane.appendChild(blist);
+
+  if (i === 1) {
+    var bnInfoBar = document.createElement('div');
+    bnInfoBar.className = 'slide-info-bar';
+    [['? What BatchNorm does', 0], ['? The formula', 1], ['? Why it helps', 2], ['? BN vs LayerNorm', 3]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn cnn';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openBnModal(pg); }); })(spec[1]);
+      bnInfoBar.appendChild(b);
+    });
+    txtPane.appendChild(bnInfoBar);
+    var bnHint = document.createElement('div');
+    bnHint.className = 'vis-hint';
+    bnHint.appendChild(document.createTextNode('click canvas for BatchNorm details'));
+    visPane.appendChild(bnHint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openBnModal(0); });
+  }
+
+  if (i === 10) {
+    var mseInfoBar = document.createElement('div');
+    mseInfoBar.className = 'slide-info-bar';
+    [['? What is MSE?', 0], ['? The formula', 1], ['? Why MSE for chess?', 2], ['? Loss landscape', 3]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn train-mse';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openMseModal(pg); }); })(spec[1]);
+      mseInfoBar.appendChild(b);
+    });
+    txtPane.appendChild(mseInfoBar);
+    var mseHint = document.createElement('div');
+    mseHint.className = 'vis-hint';
+    mseHint.appendChild(document.createTextNode('click canvas for details'));
+    visPane.appendChild(mseHint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openMseModal(0); });
+  }
+
+  if (i === 11) {
+    var bpInfoBar = document.createElement('div');
+    bpInfoBar.className = 'slide-info-bar';
+    [['? Chain rule', 0], ['? Gradient flow', 1], ['? Vanishing gradients', 2], ['? Residuals save it', 3]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn train-bp';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openBpModal(pg); }); })(spec[1]);
+      bpInfoBar.appendChild(b);
+    });
+    txtPane.appendChild(bpInfoBar);
+    var bpHint = document.createElement('div');
+    bpHint.className = 'vis-hint';
+    bpHint.appendChild(document.createTextNode('click canvas for details'));
+    visPane.appendChild(bpHint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openBpModal(0); });
+  }
+
+  if (i === 12) {
+    var adamInfoBar = document.createElement('div');
+    adamInfoBar.className = 'slide-info-bar';
+    [['? What Adam does', 0], ['? The algorithm', 1], ['? Hyperparameters', 2], ['? Adam vs SGD', 3]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn train-adam';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openAdamModal(pg); }); })(spec[1]);
+      adamInfoBar.appendChild(b);
+    });
+    txtPane.appendChild(adamInfoBar);
+    var adamHint = document.createElement('div');
+    adamHint.className = 'vis-hint';
+    adamHint.appendChild(document.createTextNode('click canvas for details'));
+    visPane.appendChild(adamHint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openAdamModal(0); });
+  }
 
   if (i === 6) {
     var infoBar = document.createElement('div');
@@ -1560,12 +2186,385 @@ var VISUALIZERS = {
   activeAnim[9] = function() { cancelAnimationFrame(rafId); };
 },
 
+// ── Slide 10: MSE Loss ─────────────────────────────
+10: function(ctx, W, H) {
+  var ROSE = '#f43f5e', GREEN = '#34d399', AMBER = '#f59e0b';
+  // Layout: left = prediction vs target scatter + residual; right = training loss curve
+  var LW = Math.floor(W * 0.52), RX = LW + 24, RW = W - RX - 12;
+  var CY = Math.floor(H * 0.52); // centre of left panel
+  var SCALE = Math.min(LW * 0.32, H * 0.36); // ±1 maps to ±SCALE px
+
+  // Simulated training loss values (decreasing curve)
+  var CURVE = [];
+  for (var ci = 0; ci < 120; ci++) {
+    CURVE.push(0.85 * Math.exp(-ci / 28) + 0.08 + 0.018 * Math.sin(ci * 0.7));
+  }
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var t = now / 2600;
+
+    // ── Left: prediction vs target axis ──────────────
+    // Axes
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+    // y-axis
+    ctx.beginPath(); ctx.moveTo(LW/2, CY - SCALE - 10); ctx.lineTo(LW/2, CY + SCALE + 10); ctx.stroke();
+    // x-axis (value range)
+    ctx.beginPath(); ctx.moveTo(20, CY); ctx.lineTo(LW - 10, CY); ctx.stroke();
+    cLabel(ctx, LW/2, CY - SCALE - 18, 'Prediction  ŷ', ROSE, 10);
+    cLabel(ctx, 14, CY - SCALE, '+1', '#334155', 9, 'left');
+    cLabel(ctx, 14, CY + SCALE, '−1', '#334155', 9, 'left');
+    cLabel(ctx, 14, CY - 4,    '0',  '#334155', 9, 'left');
+
+    // Animated prediction (oscillates to show various errors)
+    var yhat = Math.tanh(Math.sin(t) * 2.1);
+    var target = Math.sign(Math.sin(t * 0.37 + 0.8)); // flips between -1, 0, +1
+    // Draw target line
+    ctx.save();
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = GREEN + 'cc'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(20, CY - target * SCALE); ctx.lineTo(LW - 10, CY - target * SCALE); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+    cLabel(ctx, LW - 8, CY - target * SCALE - 9, 'y=' + (target > 0 ? '+1' : target < 0 ? '−1' : '0'), GREEN, 9, 'right');
+
+    // Residual shaded box
+    var pyhat = CY - yhat * SCALE;
+    var ptgt  = CY - target * SCALE;
+    ctx.fillStyle = ROSE; ctx.globalAlpha = 0.18;
+    ctx.fillRect(LW/2 - 28, Math.min(pyhat, ptgt), 56, Math.abs(pyhat - ptgt));
+    ctx.globalAlpha = 1;
+    // Bracket with residual label
+    var midErr = (pyhat + ptgt) / 2;
+    ctx.strokeStyle = ROSE; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(LW/2 + 32, pyhat); ctx.lineTo(LW/2 + 42, pyhat);
+    ctx.moveTo(LW/2 + 42, pyhat); ctx.lineTo(LW/2 + 42, ptgt);
+    ctx.moveTo(LW/2 + 32, ptgt); ctx.lineTo(LW/2 + 42, ptgt); ctx.stroke();
+    var residual = yhat - target;
+    cLabel(ctx, LW/2 + 58, midErr, (residual >= 0 ? '+' : '') + residual.toFixed(2), ROSE, 9, 'left');
+    cLabel(ctx, LW/2 + 58, midErr + 12, 'residual', '#475569', 8, 'left');
+
+    // Prediction dot
+    ctx.save(); ctx.shadowColor = ROSE; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(LW/2, pyhat, 7, 0, Math.PI * 2);
+    ctx.fillStyle = ROSE; ctx.fill(); ctx.restore();
+    cLabel(ctx, LW/2 - 14, pyhat - 13, 'ŷ=' + yhat.toFixed(2), ROSE, 9, 'right');
+
+    // Target dot
+    ctx.save(); ctx.shadowColor = GREEN; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(LW/2, ptgt, 6, 0, Math.PI * 2);
+    ctx.fillStyle = GREEN; ctx.fill(); ctx.restore();
+
+    // MSE value
+    var mse = residual * residual;
+    cLabel(ctx, LW/2, CY + SCALE + 28, 'L = (' + yhat.toFixed(2) + ' − ' + (target > 0 ? '+1' : target < 0 ? '−1' : '0') + ')² = ' + mse.toFixed(3), ROSE, 10);
+
+    // ── Right: training loss curve ────────────────────
+    var cX0 = RX, cY0 = 24, cW = RW - 4, cH = H - 52;
+    cLabel(ctx, cX0 + cW/2, cY0 - 10, 'Training loss over steps', ROSE, 10);
+    // Axes
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cX0, cY0); ctx.lineTo(cX0, cY0 + cH); ctx.lineTo(cX0 + cW, cY0 + cH); ctx.stroke();
+    cLabel(ctx, cX0 - 4, cY0 + 4, '0.9', '#334155', 8, 'right');
+    cLabel(ctx, cX0 - 4, cY0 + cH - 2, '~0', '#334155', 8, 'right');
+    cLabel(ctx, cX0 + cW, cY0 + cH + 12, 'steps', '#334155', 9, 'right');
+
+    // Animate how many points are "revealed"
+    var reveal = Math.min(CURVE.length, Math.floor(((now / 4000) % 1.2) * CURVE.length));
+
+    ctx.beginPath();
+    ctx.strokeStyle = ROSE; ctx.lineWidth = 2;
+    for (var ci2 = 0; ci2 < reveal; ci2++) {
+      var cx = cX0 + (ci2 / (CURVE.length - 1)) * cW;
+      var cy2 = cY0 + cH - CURVE[ci2] * cH / 1.0;
+      if (ci2 === 0) ctx.moveTo(cx, cy2); else ctx.lineTo(cx, cy2);
+    }
+    ctx.stroke();
+
+    // Moving dot on curve
+    if (reveal > 0) {
+      var lastIdx = reveal - 1;
+      var ldX = cX0 + (lastIdx / (CURVE.length - 1)) * cW;
+      var ldY = cY0 + cH - CURVE[lastIdx] * cH;
+      ctx.save(); ctx.shadowColor = ROSE; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(ldX, ldY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = ROSE; ctx.fill(); ctx.restore();
+      if (reveal > 10) {
+        cLabel(ctx, ldX + 8, ldY - 6, CURVE[lastIdx].toFixed(3), ROSE, 9, 'left');
+      }
+    }
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[10] = function(){ cancelAnimationFrame(rafId); };
+},
+
+// ── Slide 11: Backpropagation ──────────────────────
+11: function(ctx, W, H) {
+  var VIOLET = '#a78bfa', ROSE = '#f43f5e', FWD = '#334155', GRAD = '#a78bfa';
+
+  var layers = [
+    { name: 'MSE Loss',        col: ROSE,    sub: '∂L/∂ŷ = 2(ŷ−y)/B' },
+    { name: 'tanh',            col: '#fbbf24', sub: 'd/dx = 1−tanh²' },
+    { name: 'Linear  256→1',  col: '#c084fc', sub: '∂L/∂W₉ [256]' },
+    { name: 'Transformer ×4', col: '#818cf8', sub: '∂L/∂W_attn, ∂L/∂W_ff' },
+    { name: 'Bridge',         col: '#14b8a6', sub: '∂L/∂pos_emb, ∂L/∂cls' },
+    { name: 'Residual ×8',    col: '#f59e0b', sub: '∂L/∂W_conv [~5M]' },
+    { name: 'Input',          col: '#475569', sub: '17×8×8 (no grad)' },
+  ];
+  var N = layers.length;
+  var BH = Math.floor(Math.min(H / (N + 2), 38));
+  var BW = Math.floor(W * 0.56);
+  var BX = Math.floor((W - BW) / 2);
+  var GAP = Math.floor((H - N * BH - 40) / (N - 1));
+  var BY0 = 20;
+
+  // Right panel: gradient magnitude bars
+  var BARS = [1.0, 0.92, 0.88, 0.74, 0.71, 0.68, 0]; // relative gradient magnitudes
+  var RX = BX + BW + 28, RW = W - RX - 10;
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var t = now / 1000;
+    var fwdPhase = (t * 0.5) % 1;  // 0→1: forward pass particle
+    var bwdPhase = (t * 0.5 + 0.5) % 1; // offset: backward pass particle
+
+    // ── Draw layer boxes ─────────────────────────────
+    for (var i = 0; i < N; i++) {
+      var ly = BY0 + i * (BH + GAP);
+      var lyr = layers[i];
+      ctx.fillStyle = lyr.col + '18';
+      ctx.strokeStyle = lyr.col + '90';
+      ctx.lineWidth = 1.5;
+      var r = 5;
+      ctx.beginPath();
+      ctx.moveTo(BX+r,ly); ctx.lineTo(BX+BW-r,ly); ctx.quadraticCurveTo(BX+BW,ly,BX+BW,ly+r);
+      ctx.lineTo(BX+BW,ly+BH-r); ctx.quadraticCurveTo(BX+BW,ly+BH,BX+BW-r,ly+BH);
+      ctx.lineTo(BX+r,ly+BH); ctx.quadraticCurveTo(BX,ly+BH,BX,ly+BH-r);
+      ctx.lineTo(BX,ly+r); ctx.quadraticCurveTo(BX,ly,BX+r,ly);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = lyr.col;
+      ctx.font = 'bold ' + Math.max(9, BH * 0.35) + 'px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(lyr.name, BX + BW/2, ly + BH/2 - 5);
+      ctx.font = '8px ui-monospace,monospace';
+      ctx.fillStyle = lyr.col + 'aa';
+      ctx.fillText(lyr.sub, BX + BW/2, ly + BH/2 + 7);
+    }
+
+    // ── Connectors + particles ────────────────────────
+    var CX = BX + BW/2;
+    for (var j = 0; j < N - 1; j++) {
+      var y1 = BY0 + j * (BH + GAP) + BH;
+      var y2 = BY0 + (j + 1) * (BH + GAP);
+
+      // Forward arrow (faint, downward)
+      ctx.strokeStyle = FWD; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(CX - 12, y1 + 2); ctx.lineTo(CX - 12, y2 - 2); ctx.stroke();
+      // arrowhead down
+      ctx.fillStyle = FWD;
+      ctx.beginPath(); ctx.moveTo(CX-12, y2-2); ctx.lineTo(CX-16, y2-7); ctx.lineTo(CX-8, y2-7); ctx.closePath(); ctx.fill();
+
+      // Backward gradient arrow (violet, upward)
+      ctx.strokeStyle = GRAD + 'bb'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(CX + 12, y2 - 2); ctx.lineTo(CX + 12, y1 + 2); ctx.stroke();
+      // arrowhead up
+      ctx.fillStyle = GRAD + 'bb';
+      ctx.beginPath(); ctx.moveTo(CX+12, y1+2); ctx.lineTo(CX+8, y1+8); ctx.lineTo(CX+16, y1+8); ctx.closePath(); ctx.fill();
+    }
+
+    // Forward particle (travels DOWN through layers)
+    var fwdY = BY0 + fwdPhase * (N * BH + (N - 1) * GAP);
+    ctx.save(); ctx.shadowColor = '#64748b'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(CX - 12, fwdY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#94a3b8'; ctx.fill(); ctx.restore();
+
+    // Backward particle (travels UP)
+    var bwdY = BY0 + (N * BH + (N - 1) * GAP) * (1 - bwdPhase);
+    ctx.save(); ctx.shadowColor = GRAD; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(CX + 12, bwdY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = GRAD; ctx.fill(); ctx.restore();
+
+    // Labels
+    cLabel(ctx, CX - 24, BY0 + (N * BH + (N-1)*GAP)/2, 'fwd', '#334155', 8);
+    cLabel(ctx, CX + 26, BY0 + (N * BH + (N-1)*GAP)/2, '∂L/∂W', GRAD, 8);
+
+    // ── Right: gradient magnitude bars ───────────────
+    cLabel(ctx, RX + RW/2, BY0 - 10, 'Gradient magnitude', GRAD, 9);
+    for (var k = 0; k < N; k++) {
+      var by = BY0 + k * (BH + GAP) + BH/2 - 5;
+      var mag = BARS[k] * (RW - 8);
+      ctx.fillStyle = layers[k].col; ctx.globalAlpha = 0.7;
+      ctx.fillRect(RX, by, mag, 10);
+      ctx.globalAlpha = 1;
+      if (k === N - 1) {
+        cLabel(ctx, RX + 4, by + 5, 'no grad', '#334155', 8, 'left');
+      } else {
+        cLabel(ctx, RX + mag + 5, by + 5, BARS[k].toFixed(2), layers[k].col, 8, 'left');
+      }
+    }
+    cLabel(ctx, RX, BY0 + N*(BH+GAP) + 6, '0', '#334155', 8, 'left');
+    cLabel(ctx, RX + RW - 8, BY0 + N*(BH+GAP) + 6, '1.0', '#334155', 8, 'right');
+    // Note about residuals
+    cLabel(ctx, RX + RW/2, H - 14, '← residuals keep gradient ≥ 1 at every depth', GRAD + 'aa', 8);
+
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[11] = function(){ cancelAnimationFrame(rafId); };
+},
+
+// ── Slide 12: Adam Optimizer ───────────────────────
+12: function(ctx, W, H) {
+  var EMERALD = '#10b981', AMBER = '#f59e0b', BLUE = '#38bdf8', ROSE = '#f43f5e';
+
+  // Layout: left = loss contour + SGD vs Adam paths; right = equation animation
+  var LW = Math.floor(W * 0.54), RX = LW + 20, RW = W - RX - 10;
+
+  // ── Contour setup ──
+  var CX0 = 20, CY0 = 22, CW = LW - 30, CH = H - 44;
+  var MX = CX0 + CW/2, MY = CY0 + CH/2; // minimum of the bowl
+
+  function lossAt(x, y) {
+    // Anisotropic bowl (elongated along one axis)
+    return 0.6 * ((x - MX) / (CW * 0.38)) * ((x - MX) / (CW * 0.38)) +
+           2.2 * ((y - MY) / (CH * 0.38)) * ((y - MY) / (CH * 0.38));
+  }
+
+  // Pre-generate SGD and Adam paths
+  var NSTEPS = 48;
+  var sgdPath = [], adamPath = [];
+  // SGD: oscillates due to anisotropy; Adam: smooth
+  var gx = MX - CW * 0.34, gy = MY - CH * 0.28; // shared start
+  var sgdX = gx, sgdY = gy, aX = gx, aY = gy;
+  var mX = 0, mY = 0, vX = 1e-8, vY = 1e-8, b1 = 0.9, b2 = 0.999;
+  var lr = 0.022, sgdLr = 0.009;
+  for (var si = 0; si < NSTEPS; si++) {
+    sgdPath.push([sgdX, sgdY]);
+    adamPath.push([aX, aY]);
+    // Gradient of loss (2*coeff*(pos - min)/spread²)
+    var gsgdX = 1.2 * (sgdX - MX) / ((CW * 0.38) * (CW * 0.38));
+    var gsgdY = 4.4 * (sgdY - MY) / ((CH * 0.38) * (CH * 0.38));
+    sgdX -= sgdLr * gsgdX * CW;
+    sgdY -= sgdLr * gsgdY * CH;
+    // Adam gradients
+    var gAX = 1.2 * (aX - MX) / ((CW * 0.38) * (CW * 0.38));
+    var gAY = 4.4 * (aY - MY) / ((CH * 0.38) * (CH * 0.38));
+    mX = b1 * mX + (1 - b1) * gAX;
+    mY = b1 * mY + (1 - b1) * gAY;
+    vX = b2 * vX + (1 - b2) * gAX * gAX;
+    vY = b2 * vY + (1 - b2) * gAY * gAY;
+    var t2 = si + 1;
+    var mhX = mX / (1 - Math.pow(b1, t2)), mhY = mY / (1 - Math.pow(b1, t2));
+    var vhX = vX / (1 - Math.pow(b2, t2)), vhY = vY / (1 - Math.pow(b2, t2));
+    aX -= lr * mhX / (Math.sqrt(vhX) + 1e-8) * CW;
+    aY -= lr * mhY / (Math.sqrt(vhY) + 1e-8) * CH;
+  }
+
+  var rafId;
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    var t = now / 1000;
+
+    // ── Contour lines ─────────────────────────────────
+    cLabel(ctx, CX0 + CW/2, CY0 - 8, 'Loss landscape: SGD vs Adam', '#64748b', 10);
+    var CONTOURS = [0.02, 0.08, 0.18, 0.32, 0.52, 0.76, 1.0];
+    CONTOURS.forEach(function(lvl) {
+      var alpha = 0.12 + lvl * 0.18;
+      ctx.strokeStyle = 'rgba(100,116,139,' + alpha + ')';
+      ctx.lineWidth = 1;
+      // Ellipse for each contour level (since loss is an ellipse)
+      var rx = CW * 0.38 * Math.sqrt(lvl / 0.6);
+      var ry = CH * 0.38 * Math.sqrt(lvl / 2.2);
+      ctx.beginPath(); ctx.ellipse(MX, MY, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    });
+
+    // Minimum dot
+    ctx.save(); ctx.shadowColor = '#94a3b8'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(MX, MY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#94a3b8'; ctx.fill(); ctx.restore();
+    cLabel(ctx, MX + 8, MY - 8, 'min', '#334155', 8, 'left');
+
+    // Animate reveal of paths
+    var reveal = Math.min(NSTEPS, Math.floor(((t * 0.5) % 1.3) * NSTEPS));
+
+    // SGD path
+    if (reveal > 1) {
+      ctx.beginPath(); ctx.strokeStyle = ROSE; ctx.lineWidth = 1.5;
+      ctx.moveTo(sgdPath[0][0], sgdPath[0][1]);
+      for (var pi = 1; pi < reveal; pi++) ctx.lineTo(sgdPath[pi][0], sgdPath[pi][1]);
+      ctx.stroke();
+      var sdot = sgdPath[reveal - 1];
+      ctx.save(); ctx.shadowColor = ROSE; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(sdot[0], sdot[1], 5, 0, Math.PI*2);
+      ctx.fillStyle = ROSE; ctx.fill(); ctx.restore();
+      cLabel(ctx, sgdPath[0][0] - 6, sgdPath[0][1] - 10, 'SGD', ROSE, 9);
+    }
+
+    // Adam path
+    if (reveal > 1) {
+      ctx.beginPath(); ctx.strokeStyle = EMERALD; ctx.lineWidth = 2;
+      ctx.moveTo(adamPath[0][0], adamPath[0][1]);
+      for (var pi2 = 1; pi2 < reveal; pi2++) ctx.lineTo(adamPath[pi2][0], adamPath[pi2][1]);
+      ctx.stroke();
+      var adot = adamPath[reveal - 1];
+      ctx.save(); ctx.shadowColor = EMERALD; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(adot[0], adot[1], 5, 0, Math.PI*2);
+      ctx.fillStyle = EMERALD; ctx.fill(); ctx.restore();
+      cLabel(ctx, adamPath[0][0] + 8, adamPath[0][1] - 10, 'Adam', EMERALD, 9);
+    }
+
+    // ── Right: animated update equations ─────────────
+    var eY = CY0;
+    var eStep = Math.floor(t * 1.1) % 6;
+    var ePulse = (Math.sin(t * 3) + 1) * 0.5;
+
+    cLabel(ctx, RX + RW/2, eY, 'One Adam step', EMERALD, 10);
+    eY += 16;
+
+    var eqs = [
+      { label: 'g', expr: '= ∂L/∂θ', col: ROSE },
+      { label: 'm_t', expr: '= β₁·m + (1−β₁)·g', col: EMERALD },
+      { label: 'v_t', expr: '= β₂·v + (1−β₂)·g²', col: AMBER },
+      { label: 'm̂', expr: '= m / (1−β₁ᵗ)', col: EMERALD },
+      { label: 'v̂', expr: '= v / (1−β₂ᵗ)', col: AMBER },
+      { label: 'θ', expr: '← θ − α·m̂/(√v̂+ε)', col: BLUE },
+    ];
+    var eqH = Math.min(32, (CH - 20) / eqs.length);
+    eqs.forEach(function(eq, ei) {
+      var active = ei === eStep;
+      var ey2 = eY + ei * eqH;
+      ctx.globalAlpha = active ? 1.0 : 0.35;
+      if (active) {
+        ctx.save(); ctx.shadowColor = eq.col; ctx.shadowBlur = 8 * ePulse;
+        ctx.fillStyle = eq.col + '18';
+        ctx.fillRect(RX - 4, ey2 - 1, RW + 8, eqH - 4); ctx.restore();
+      }
+      ctx.fillStyle = eq.col; ctx.font = 'bold ' + Math.max(9, eqH * 0.4) + 'px ui-monospace,monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(eq.label, RX, ey2 + eqH/2 - 3);
+      ctx.fillStyle = '#94a3b8'; ctx.font = Math.max(8, eqH * 0.35) + 'px ui-monospace,monospace';
+      ctx.fillText(eq.expr, RX + 38, ey2 + eqH/2 - 3);
+      ctx.globalAlpha = 1;
+    });
+
+    // Hyperparameter legend at bottom
+    var legY = eY + eqs.length * eqH + 10;
+    cLabel(ctx, RX + RW/2, legY,      'β₁=0.9   β₂=0.999', '#334155', 8);
+    cLabel(ctx, RX + RW/2, legY + 12, 'α=1e-3   ε=1e-8',   '#334155', 8);
+
+    rafId = requestAnimationFrame(draw);
+  }
+  rafId = requestAnimationFrame(draw);
+  activeAnim[12] = function(){ cancelAnimationFrame(rafId); };
+},
+
 }; // VISUALIZERS
 
 // ── Modal ──────────────────────────────────────────
 var modalOverlay  = document.getElementById('modal-overlay');
-var modalTabEls   = document.querySelectorAll('.modal-tab');
-var modalPageEls  = document.querySelectorAll('.modal-page');
+var modalTabEls   = modalOverlay.querySelectorAll('.modal-tab');
+var modalPageEls  = modalOverlay.querySelectorAll('.modal-page');
 
 function openModal(pageIdx) {
   showModalPage(pageIdx || 0);
@@ -1583,6 +2582,71 @@ document.getElementById('modal-close-btn').addEventListener('click', closeModal)
 modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeModal(); });
 modalTabEls.forEach(function (t) {
   t.addEventListener('click', function () { showModalPage(Number(t.dataset.page)); });
+});
+
+// ── MSE Loss modal ─────────────────────────────────
+var mseOverlay  = document.getElementById('mse-modal-overlay');
+var mseTabEls   = mseOverlay.querySelectorAll('.modal-tab');
+var msePageEls  = mseOverlay.querySelectorAll('.modal-page');
+function openMseModal(pg) { showMsePage(pg||0); mseOverlay.classList.add('open'); }
+function closeMseModal()  { mseOverlay.classList.remove('open'); }
+function showMsePage(idx) {
+  mseTabEls.forEach(function(t,i){ t.classList.toggle('active', i===idx); });
+  msePageEls.forEach(function(p,i){ p.classList.toggle('active', i===idx); });
+}
+document.getElementById('mse-modal-close-btn').addEventListener('click', closeMseModal);
+mseOverlay.addEventListener('click', function(e){ if(e.target===mseOverlay) closeMseModal(); });
+mseTabEls.forEach(function(t){ t.addEventListener('click', function(){ showMsePage(Number(t.dataset.msePage)); }); });
+
+// ── Backprop modal ─────────────────────────────────
+var bpOverlay  = document.getElementById('bp-modal-overlay');
+var bpTabEls   = bpOverlay.querySelectorAll('.modal-tab');
+var bpPageEls  = bpOverlay.querySelectorAll('.modal-page');
+function openBpModal(pg) { showBpPage(pg||0); bpOverlay.classList.add('open'); }
+function closeBpModal()  { bpOverlay.classList.remove('open'); }
+function showBpPage(idx) {
+  bpTabEls.forEach(function(t,i){ t.classList.toggle('active', i===idx); });
+  bpPageEls.forEach(function(p,i){ p.classList.toggle('active', i===idx); });
+}
+document.getElementById('bp-modal-close-btn').addEventListener('click', closeBpModal);
+bpOverlay.addEventListener('click', function(e){ if(e.target===bpOverlay) closeBpModal(); });
+bpTabEls.forEach(function(t){ t.addEventListener('click', function(){ showBpPage(Number(t.dataset.bpPage)); }); });
+
+// ── Adam modal ─────────────────────────────────────
+var adamOverlay  = document.getElementById('adam-modal-overlay');
+var adamTabEls   = adamOverlay.querySelectorAll('.modal-tab');
+var adamPageEls  = adamOverlay.querySelectorAll('.modal-page');
+function openAdamModal(pg) { showAdamPage(pg||0); adamOverlay.classList.add('open'); }
+function closeAdamModal()  { adamOverlay.classList.remove('open'); }
+function showAdamPage(idx) {
+  adamTabEls.forEach(function(t,i){ t.classList.toggle('active', i===idx); });
+  adamPageEls.forEach(function(p,i){ p.classList.toggle('active', i===idx); });
+}
+document.getElementById('adam-modal-close-btn').addEventListener('click', closeAdamModal);
+adamOverlay.addEventListener('click', function(e){ if(e.target===adamOverlay) closeAdamModal(); });
+adamTabEls.forEach(function(t){ t.addEventListener('click', function(){ showAdamPage(Number(t.dataset.adamPage)); }); });
+
+// ── BatchNorm modal ─────────────────────────────────
+var bnOverlay   = document.getElementById('bn-modal-overlay');
+var bnTabEls    = bnOverlay.querySelectorAll('.modal-tab');
+var bnPageEls   = bnOverlay.querySelectorAll('.modal-page');
+
+function openBnModal(pageIdx) {
+  showBnPage(pageIdx || 0);
+  bnOverlay.classList.add('open');
+}
+function closeBnModal() {
+  bnOverlay.classList.remove('open');
+}
+function showBnPage(idx) {
+  bnTabEls.forEach(function (t, i) { t.classList.toggle('active', i === idx); });
+  bnPageEls.forEach(function (p, i) { p.classList.toggle('active', i === idx); });
+}
+
+document.getElementById('bn-modal-close-btn').addEventListener('click', closeBnModal);
+bnOverlay.addEventListener('click', function (e) { if (e.target === bnOverlay) closeBnModal(); });
+bnTabEls.forEach(function (t) {
+  t.addEventListener('click', function () { showBnPage(Number(t.dataset.bnPage)); });
 });
 
 // ── State ──────────────────────────────────────────
@@ -1646,8 +2710,9 @@ prevBtn.addEventListener('click', stepBack);
 nextBtn.addEventListener('click', stepForward);
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { closeModal(); return; }
-  if (modalOverlay.classList.contains('open')) return;
+  if (e.key === 'Escape') { closeModal(); closeBnModal(); closeMseModal(); closeBpModal(); closeAdamModal(); return; }
+  if (modalOverlay.classList.contains('open') || bnOverlay.classList.contains('open') ||
+      mseOverlay.classList.contains('open') || bpOverlay.classList.contains('open') || adamOverlay.classList.contains('open')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault(); stepForward();
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
