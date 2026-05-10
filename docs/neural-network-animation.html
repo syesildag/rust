@@ -341,6 +341,26 @@ html, body {
 .gamma { color: #fbbf24; font-weight: 700; }
 .beta-c { color: #fde68a; font-weight: 700; }
 
+/* ── Positional Embeddings modal — teal accent ──── */
+#pe-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5,8,15,0.86);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#pe-modal-overlay.open { opacity: 1; pointer-events: auto; }
+#pe-modal-overlay .modal-box { border-color: rgba(20,184,166,0.32); box-shadow: 0 0 80px rgba(20,184,166,0.10); }
+#pe-modal-overlay .modal-tab.active { background: rgba(20,184,166,0.15); color: #14b8a6; }
+#pe-modal-overlay .modal-tab:hover  { background: rgba(20,184,166,0.10); color: #2dd4bf; }
+#pe-modal-overlay .modal-formula    { background: rgba(20,184,166,0.06); border-color: rgba(20,184,166,0.22); color: #5eead4; }
+#pe-modal-overlay .modal-page-title { color: #5eead4; }
+.teal  { color: #14b8a6; font-weight: 700; }
+.teal2 { color: #2dd4bf; font-weight: 700; }
+.info-btn.bridge { background: rgba(20,184,166,0.08); border-color: rgba(20,184,166,0.28); color: #14b8a6; }
+.info-btn.bridge:hover { background: rgba(20,184,166,0.18); box-shadow: 0 0 14px rgba(20,184,166,0.22); }
+
 /* ── MSE Loss modal — rose accent ───────────────── */
 #mse-modal-overlay {
   position: fixed; inset: 0; z-index: 500;
@@ -710,6 +730,135 @@ html, body {
 
  </div><!-- .modal-box -->
 </div><!-- #bn-modal-overlay -->
+
+<!-- ── Positional Embeddings modal ───────────────── -->
+<div id="pe-modal-overlay" role="dialog" aria-modal="true" aria-label="Positional Embeddings explained">
+ <div class="modal-box">
+  <button class="modal-close" id="pe-modal-close-btn" aria-label="Close">&#10005;</button>
+  <div class="modal-tabs">
+   <button class="modal-tab active" data-pe-page="0">Why positions?</button>
+   <button class="modal-tab" data-pe-page="1">Learned vs sinusoidal</button>
+   <button class="modal-tab" data-pe-page="2">Board geometry</button>
+   <button class="modal-tab" data-pe-page="3">Add vs concatenate</button>
+  </div>
+
+  <!-- PE Page 0: Why positions? -->
+  <div class="modal-page active" id="pe-page-0">
+   <div class="modal-page-title">Why Positional Embeddings Are Necessary</div>
+   <div class="modal-section">
+    <h3>Attention is permutation-equivariant</h3>
+    <p>The attention score between token <em>i</em> and token <em>j</em> is computed purely from their content vectors — <span class="teal">Q<sub>i</sub> &sdot; K<sub>j</sub></span>. If you shuffled the 65 input tokens in any order, every attention score would remain the same; only the rows of the output matrix would reorder identically. The Transformer has <strong>no built-in sense of order or location</strong>.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why this is catastrophic for chess</h3>
+    <p>A rook on <strong>a1</strong> and a rook on <strong>h8</strong> produce identical token vectors from the CNN (same piece type, same side, same features). Without positional embeddings the Transformer cannot distinguish them — it would assign the same query, key, and value projections to both. The network would be unable to reason about file control, proximity to the king, or any square-specific tactical pattern.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Positions inject square identity</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>input to Transformer: &nbsp;x<sub>i</sub> &nbsp;= CNN_token<sub>i</sub> + <span class="teal">PE<sub>i</sub></span></span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span><span class="teal">PE<sub>i</sub></span> is a learnable 256-dim vector — one per sequence position 0&hellip;64</span></div>
+    </div>
+    <p>After adding <span class="teal">PE</span>, the rook on a1 has a <em>different</em> input vector than the rook on h8, even if their CNN features are identical. The Transformer now has all the information it needs to reason about both <em>what</em> is on a square <em>and</em> <em>where</em> that square is.</p>
+   </div>
+   <div class="modal-section">
+    <h3>The [CLS] position (index 0)</h3>
+    <p>The prepended [CLS] token also gets its own positional embedding at index 0. This embedding is learned alongside the square embeddings and allows the Transformer to distinguish the global-summary token from any board square. Without it, attention heads could not treat [CLS] specially.</p>
+   </div>
+  </div>
+
+  <!-- PE Page 1: Learned vs sinusoidal -->
+  <div class="modal-page" id="pe-page-1">
+   <div class="modal-page-title">Learned Embeddings vs Sinusoidal Encodings</div>
+   <div class="modal-section">
+    <h3>The original choice: sinusoidal</h3>
+    <p>The 2017 &ldquo;Attention Is All You Need&rdquo; paper used <strong>fixed</strong> encodings based on sine and cosine at different frequencies:</p>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>PE<sub>(pos, 2i)</sub> &nbsp;= sin( pos / 10000<sup>2i/d</sup> )</span></div>
+     <div class="fstep"><span class="fnum">&mdash;</span><span>PE<sub>(pos, 2i+1)</sub> = cos( pos / 10000<sup>2i/d</sup> )</span></div>
+    </div>
+    <p>These encodings are deterministic, require no training, and can extrapolate to sequence lengths not seen during training because the formula extends to any position.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Why this network uses learned embeddings</h3>
+    <p>For chess the sequence length is always exactly <strong>65 tokens</strong> (64 squares + 1 [CLS]). There is no generalisation to unseen lengths — the board never changes size. Learned embeddings are strictly more expressive: they can encode <em>any</em> relationship between positions, including chess-specific structure like the 8-fold rank/file grid, diagonal adjacency, and the king&rsquo;s corner proximity.</p>
+   </div>
+   <div class="modal-section">
+    <h3>What the network actually learns</h3>
+    <p>After training, the 64 square embeddings form a learned <em>map</em> of the board. Analysing them with PCA or cosine similarity typically reveals clusters: a-file squares are similar to each other, central squares cluster together, corner squares cluster. The network discovers board geometry purely from position&rarr;outcome supervision — no chess rules are encoded by hand.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Comparison</h3>
+    <div class="analogy-grid" style="grid-template-columns:1fr 1fr;">
+     <div class="analogy-card">
+      <div class="ltr teal" style="font-size:0.9rem;">Sinusoidal</div>
+      <p>Fixed &middot; No training cost &middot; Generalises to new lengths &middot; Encodes distance by construction &middot; Used in NLP transformers</p>
+     </div>
+     <div class="analogy-card">
+      <div class="ltr teal2" style="font-size:0.9rem;">Learned</div>
+      <p>65&times;256 = 16&thinsp;640 extra params &middot; Fully flexible &middot; Discovers board geometry &middot; No length generalisation needed &middot; Used here &amp; in BERT, ViT</p>
+     </div>
+    </div>
+   </div>
+  </div>
+
+  <!-- PE Page 2: Board geometry -->
+  <div class="modal-page" id="pe-page-2">
+   <div class="modal-page-title">Board Geometry in Positional Embeddings</div>
+   <div class="modal-section">
+    <h3>Mapping squares to sequence positions</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">0</span><span>[CLS] &mdash; global board summary token</span></div>
+     <div class="fstep"><span class="fnum">1</span><span>a1 &nbsp;(bottom-left from White&rsquo;s view)</span></div>
+     <div class="fstep"><span class="fnum">2</span><span>b1 &nbsp;→ &hellip; → 8: h1 &nbsp;(first rank)</span></div>
+     <div class="fstep"><span class="fnum">9</span><span>a2 &nbsp;→ &hellip; → 64: h8 &nbsp;(last square)</span></div>
+    </div>
+    <p>The 8&times;8 board is flattened row-by-row. Ranks 1&rarr;8 map to sequence groups 1&ndash;8, 9&ndash;16, &hellip;, 57&ndash;64. Files a&rarr;h map to the offset within each group. This is the same raster-scan order used in the CNN input planes.</p>
+   </div>
+   <div class="modal-section">
+    <h3>No explicit adjacency — the network learns it</h3>
+    <p>The positional embedding for a1 (index 1) and b1 (index 2) are initialised randomly. Nothing in the architecture forces them to be similar. Yet during training, because pieces on adjacent squares interact frequently, <strong>backprop pushes adjacent squares&rsquo; PE vectors to be nearby in embedding space</strong>. The learned geometry emerges from supervision, not from hard-coded structure.</p>
+   </div>
+   <div class="modal-section">
+    <h3>What attention uses positions for</h3>
+    <p>An attention head computing Q<sub>a1</sub> &sdot; K<sub>h8</sub> now produces a different score than Q<sub>d4</sub> &sdot; K<sub>d5</sub>, <em>even if those squares currently hold the same piece type</em>, because the PE vectors are baked into the query and key projections. This is how a head can learn &ldquo;diagonally adjacent squares interact&rdquo; or &ldquo;same-rank squares share info&rdquo; without explicit board geometry being hard-coded.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Relative vs absolute position</h3>
+    <p>This network uses <strong>absolute</strong> positional embeddings — each square has a fixed vector regardless of context. More advanced approaches like <em>Relative Position Encodings</em> (Shaw et al.) or <em>RoPE</em> (Rotary PE) encode the <em>distance</em> between squares rather than their absolute coordinates. For chess, absolute PE is simple and effective because the board is fixed-size and the absolute meaning of each square (e.g., centre vs edge) is strategically significant.</p>
+   </div>
+  </div>
+
+  <!-- PE Page 3: Add vs concatenate -->
+  <div class="modal-page" id="pe-page-3">
+   <div class="modal-page-title">Why Add Instead of Concatenate?</div>
+   <div class="modal-section">
+    <h3>The two options</h3>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">Add</span><span>x<sub>i</sub> = token<sub>i</sub> + <span class="teal">PE<sub>i</sub></span> &emsp;<span class="dim">[65&times;256] — shape unchanged</span></span></div>
+     <div class="fstep"><span class="fnum">Cat</span><span>x<sub>i</sub> = [token<sub>i</sub> ‖ <span class="teal">PE<sub>i</sub></span>] &emsp;<span class="dim">[65&times;512] — double width</span></span></div>
+    </div>
+   </div>
+   <div class="modal-section">
+    <h3>Why addition is preferred</h3>
+    <p>Concatenation would double the feature dimension to 512. The Q, K, V projection matrices would need to be 512&times;256 instead of 256&times;256 — <strong>doubling the parameter count</strong> of every attention projection in all 4 Transformer blocks. The attention cost would also increase. Addition keeps the dimension at 256 with zero cost.</p>
+   </div>
+   <div class="modal-section">
+    <h3>The mathematical justification</h3>
+    <p>When you add two vectors, the linear projections W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> operate on both simultaneously. Because the linear map is distributive:</p>
+    <div class="modal-formula">
+     <div class="fstep"><span class="fnum">&mdash;</span><span>W &sdot; (token + <span class="teal">PE</span>) = W &sdot; token + W &sdot; <span class="teal">PE</span></span></div>
+    </div>
+    <p>The projection separately extracts content-relevant directions and position-relevant directions from the same 256-dim vector. The network learns to allocate different dimensions of its 256-dim space to content vs position. This is called <em>superposition</em> — multiple signals packed into the same representation.</p>
+   </div>
+   <div class="modal-section">
+    <h3>Does mixing content and position lose information?</h3>
+    <p>In principle, yes — addition is a lossy operation (you cannot recover token or PE individually). In practice, the Transformer has enough capacity to disentangle them: different dimensions of the 256-dim space end up encoding position vs content features, as evidenced by probing experiments on BERT-style models. For chess the 256-dim bottleneck is unlikely to be the limiting factor given the ~6M total parameters.</p>
+   </div>
+  </div>
+
+ </div><!-- .modal-box -->
+</div><!-- #pe-modal-overlay -->
 
 <!-- ── MSE Loss explanation modal ─────────────────── -->
 <div id="mse-modal-overlay" role="dialog" aria-modal="true" aria-label="MSE Loss explained">
@@ -1185,6 +1334,25 @@ STEPS.forEach(function (step, i) {
     visPane.appendChild(bnHint);
     visPane.style.cursor = 'pointer';
     visPane.addEventListener('click', function () { openBnModal(0); });
+  }
+
+  if (i === 5) {
+    var peInfoBar = document.createElement('div');
+    peInfoBar.className = 'slide-info-bar';
+    [['? Why positions?', 0], ['? Learned vs sinusoidal', 1], ['? Board geometry', 2], ['? Add vs concatenate', 3]].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'info-btn bridge';
+      b.textContent = spec[0];
+      (function (pg) { b.addEventListener('click', function (e) { e.stopPropagation(); openPeModal(pg); }); })(spec[1]);
+      peInfoBar.appendChild(b);
+    });
+    txtPane.appendChild(peInfoBar);
+    var peHint = document.createElement('div');
+    peHint.className = 'vis-hint';
+    peHint.appendChild(document.createTextNode('click canvas for details'));
+    visPane.appendChild(peHint);
+    visPane.style.cursor = 'pointer';
+    visPane.addEventListener('click', function () { openPeModal(0); });
   }
 
   if (i === 10) {
@@ -2584,6 +2752,20 @@ modalTabEls.forEach(function (t) {
   t.addEventListener('click', function () { showModalPage(Number(t.dataset.page)); });
 });
 
+// ── Positional Embeddings modal ────────────────────
+var peOverlay  = document.getElementById('pe-modal-overlay');
+var peTabEls   = peOverlay.querySelectorAll('.modal-tab');
+var pePageEls  = peOverlay.querySelectorAll('.modal-page');
+function openPeModal(pg) { showPePage(pg||0); peOverlay.classList.add('open'); }
+function closePeModal()  { peOverlay.classList.remove('open'); }
+function showPePage(idx) {
+  peTabEls.forEach(function(t,i){ t.classList.toggle('active', i===idx); });
+  pePageEls.forEach(function(p,i){ p.classList.toggle('active', i===idx); });
+}
+document.getElementById('pe-modal-close-btn').addEventListener('click', closePeModal);
+peOverlay.addEventListener('click', function(e){ if(e.target===peOverlay) closePeModal(); });
+peTabEls.forEach(function(t){ t.addEventListener('click', function(){ showPePage(Number(t.dataset.pePage)); }); });
+
 // ── MSE Loss modal ─────────────────────────────────
 var mseOverlay  = document.getElementById('mse-modal-overlay');
 var mseTabEls   = mseOverlay.querySelectorAll('.modal-tab');
@@ -2710,9 +2892,10 @@ prevBtn.addEventListener('click', stepBack);
 nextBtn.addEventListener('click', stepForward);
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { closeModal(); closeBnModal(); closeMseModal(); closeBpModal(); closeAdamModal(); return; }
+  if (e.key === 'Escape') { closeModal(); closeBnModal(); closePeModal(); closeMseModal(); closeBpModal(); closeAdamModal(); return; }
   if (modalOverlay.classList.contains('open') || bnOverlay.classList.contains('open') ||
-      mseOverlay.classList.contains('open') || bpOverlay.classList.contains('open') || adamOverlay.classList.contains('open')) return;
+      peOverlay.classList.contains('open') || mseOverlay.classList.contains('open') ||
+      bpOverlay.classList.contains('open') || adamOverlay.classList.contains('open')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault(); stepForward();
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
