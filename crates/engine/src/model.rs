@@ -240,6 +240,12 @@ impl Persist for HybridValueNet {
                 r.read_exact(&mut buf4)?;
                 data.push(f32::from_le_bytes(buf4));
             }
+            if data.iter().any(|v| !v.is_finite()) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "saved weights contain NaN/Inf — checkpoint is corrupt, delete and retrain",
+                ));
+            }
             p.set_data(&data);
         }
         Ok(model)

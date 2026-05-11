@@ -192,7 +192,22 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             }
 
             loss.backward();
-            adam.clip_grad_norm(1.0);
+            if !adam.clip_grad_norm(1.0) {
+                // Find the first parameter whose gradient went non-finite to help
+                // trace which layer is the source of the numerical instability.
+                let first_bad = model
+                    .parameters()
+                    .iter()
+                    .enumerate()
+                    .find(|(_, p)| p.grad().iter().any(|g| !g.is_finite()))
+                    .map(|(i, _)| i);
+                warn!(
+                    percentage = format!("{pct:.1}%"),
+                    first_nonfinite_param = ?first_bad,
+                    "non-finite gradients after backward — skipping optimizer step"
+                );
+                continue;
+            }
             adam.step();
 
             if step_sleep_ms > 0 {

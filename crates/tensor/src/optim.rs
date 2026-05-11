@@ -86,18 +86,29 @@ impl Adam {
     ///
     /// Computes the combined L2 norm of every parameter's gradient vector.
     /// If it exceeds `max_norm`, all gradients are scaled down uniformly so
-    /// the global norm equals `max_norm`. Has no effect when the norm is
-    /// already within bounds or is not finite (e.g. NaN/Inf).
+    /// the global norm equals `max_norm`.
+    ///
+    /// Returns `true` when gradients are finite (possibly clipped) and the
+    /// caller should proceed with `step()`. Returns `false` when the gradient
+    /// norm is non-finite (NaN or Inf), in which case all gradients are zeroed
+    /// and the caller **must skip** `step()` to prevent NaN weights.
     ///
     /// Call this after `loss.backward()` and before `step()`.
-    pub fn clip_grad_norm(&self, max_norm: f32) {
+    pub fn clip_grad_norm(&self, max_norm: f32) -> bool {
         let total_sq: f32 = self
             .params
             .iter()
             .flat_map(|p| p.grad().into_iter().map(|g| g * g))
             .sum();
         let norm = total_sq.sqrt();
-        if norm.is_finite() && norm > max_norm {
+        if !norm.is_finite() {
+            // Zero out all gradients so a stale `step()` call can't corrupt weights.
+            for p in &self.params {
+                p.zero_grad();
+            }
+            return false;
+        }
+        if norm > max_norm {
             trace!(n = norm, mn = max_norm, "clipping");
             let scale = max_norm / norm;
             for p in &self.params {
@@ -106,6 +117,7 @@ impl Adam {
                 p.accumulate_grad(&clipped);
             }
         }
+        true
     }
 
     /// Zeros all accumulated gradients.
