@@ -149,7 +149,10 @@ impl HybridValueNet {
 
         // 3b. Per-token normalisation before the transformer.
         //     Applied to [B*64, 256] then reshaped back.
-        let x = self.pre_norm.forward(&x.reshape(&[b * 64, D_MODEL])).reshape(&[b, 64, D_MODEL]);
+        let x = self
+            .pre_norm
+            .forward(&x.reshape(&[b * 64, D_MODEL]))
+            .reshape(&[b, 64, D_MODEL]);
 
         // 4. Prepend CLS → [B, 65, 256], then broadcast-add positional embeddings.
         let x = ops::prepend_cls_batched(&self.cls_token, &x);
