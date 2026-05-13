@@ -98,12 +98,24 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
             break;
         }
 
-        // Pick the move maximising value from the side-to-move's perspective.
-        let best_move = legal.iter().copied().max_by(|&a, &b| {
-            let va = eval_move(model, &board, a);
-            let vb = eval_move(model, &board, b);
-            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Evaluate all legal moves in one batched forward pass.
+        let after_boards: Vec<Board> = legal
+            .iter()
+            .copied()
+            .map(|mv| board.make_move(mv))
+            .collect();
+        let raw_data = model.forward_batch(&after_boards).data();
+        let sign = match board.side_to_move {
+            Color::White => 1.0_f32,
+            Color::Black => -1.0_f32,
+        };
+        let best_move = (0..legal.len())
+            .max_by(|&i, &j| {
+                (sign * raw_data[i])
+                    .partial_cmp(&(sign * raw_data[j]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|i| legal[i]);
 
         if let Some(mv) = best_move {
             let san = move_to_san(&board, mv);
@@ -129,18 +141,6 @@ fn play_game(model: &HybridValueNet) -> PlayedGame {
     (samples, move_log, outcome, game_id)
 }
 
-/// Evaluates a candidate move by running the model on the resulting position,
-/// negating for Black (so higher is always better for the side to move).
-fn eval_move(model: &HybridValueNet, board: &Board, mv: chess::moves::Move) -> f32 {
-    let after = board.make_move(mv);
-    let raw = model.forward(&after).data()[0];
-    // White maximises positive values; Black maximises negative (flips sign).
-    match board.side_to_move {
-        Color::White => raw,
-        Color::Black => -raw,
-    }
-}
-
 /// Returns the game outcome from White's perspective after the position is terminal.
 fn terminal_outcome(board: &Board) -> f32 {
     match game_status(board) {
@@ -152,5 +152,18 @@ fn terminal_outcome(board: &Board) -> f32 {
             }
         }
         _ => 0.0, // stalemate, draw, or max-ply reached
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::HybridValueNet;
+
+    #[test]
+    fn generate_one_game_produces_samples() {
+        let model = HybridValueNet::new();
+        let dataset = generate(&model, 1);
+        assert!(!dataset.is_empty(), "expected at least one training sample");
     }
 }

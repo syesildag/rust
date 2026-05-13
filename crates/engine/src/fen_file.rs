@@ -64,12 +64,11 @@ fn parse_csv_line(line: &str) -> Option<Sample> {
         "0-1" => -1.0,
         "1/2-1/2" => 0.0,
         other => {
-            let raw: f32 = match other.parse() {
-                Ok(v) => v,
-                Err(_) => {
-                    tracing::warn!(value = other, "unparseable CSV outcome skipped");
-                    return None;
-                }
+            let raw: f32 = if let Ok(v) = other.parse() {
+                v
+            } else {
+                tracing::warn!(value = other, "unparseable CSV outcome skipped");
+                return None;
             };
             (raw / 4.0).tanh()
         }

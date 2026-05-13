@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tensor::optim::Adam;
 use tensor::{ops, Tensor};
-use tracing::{info, info_span, warn, debug};
+use tracing::{debug, info, info_span, warn};
 
 /// Hyper-parameters for a training run.
 pub struct TrainConfig {
@@ -50,6 +50,7 @@ impl Default for TrainConfig {
 ///
 /// # Errors
 /// Returns an error if no positions could be loaded (empty or unreadable PGN paths).
+#[allow(clippy::too_many_lines)]
 pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let model = HybridValueNet::load_from(&cfg.output)
         .inspect(|_| info!(path = %cfg.output.display(), "restored model weights"))
@@ -147,9 +148,16 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             let loss_val = loss.data()[0];
             if !loss_val.is_finite() {
                 let pred_data = preds.data();
-                let finite_preds: Vec<f32> = pred_data.iter().copied().filter(|v| v.is_finite()).collect();
+                let finite_preds: Vec<f32> = pred_data
+                    .iter()
+                    .copied()
+                    .filter(|v| v.is_finite())
+                    .collect();
                 let pred_min = finite_preds.iter().copied().fold(f32::INFINITY, f32::min);
-                let pred_max = finite_preds.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let pred_max = finite_preds
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max);
                 let bad_positions: Vec<String> = pred_data
                     .iter()
                     .zip(boards.iter())
@@ -163,7 +171,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     .collect();
                 let target_data = targets.data();
                 let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
-                let target_max = target_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let target_max = target_data
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max);
                 // Log the L2 norm of each parameter tensor.  An exploding norm
                 // (e.g. > 100) points to the source layer of the instability.
                 let param_norms: Vec<String> = model
@@ -214,10 +225,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 std::thread::sleep(std::time::Duration::from_millis(step_sleep_ms));
             }
 
-            info!(
-                percentage = format!("{pct:.1}%"),
-                loss = loss_val
-            );
+            info!(percentage = format!("{pct:.1}%"), loss = loss_val);
             loss_log.push((epoch, pct, loss_val));
 
             for (board, _, game_id) in &filtered {
@@ -235,10 +243,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     Ok(model)
 }
 
-fn append_loss_log(
-    path: &std::path::Path,
-    entries: &[(usize, f32, f32)],
-) -> std::io::Result<()> {
+fn append_loss_log(path: &std::path::Path, entries: &[(usize, f32, f32)]) -> std::io::Result<()> {
     use std::io::Write;
     debug!(path = %path.display(), "saving");
     let needs_header = !path.exists();

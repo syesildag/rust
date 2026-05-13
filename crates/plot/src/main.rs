@@ -2,8 +2,12 @@ use plotters::prelude::*;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let input = std::env::args().nth(1).unwrap_or_else(|| "loss.csv".to_string());
-    let output = std::env::args().nth(2).unwrap_or_else(|| "loss.svg".to_string());
+    let input = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "loss.csv".to_string());
+    let output = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "loss.svg".to_string());
     let window: usize = std::env::args()
         .nth(3)
         .and_then(|s| s.parse().ok())
@@ -45,6 +49,7 @@ fn moving_average(data: &[(f64, f64)], window: usize) -> Vec<(f64, f64)> {
         .map(|(i, &(x, _))| {
             let start = i.saturating_sub(window - 1);
             let slice = &data[start..=i];
+            #[allow(clippy::cast_precision_loss)]
             let mean = slice.iter().map(|&(_, y)| y).sum::<f64>() / slice.len() as f64;
             (x, mean)
         })
@@ -52,9 +57,21 @@ fn moving_average(data: &[(f64, f64)], window: usize) -> Vec<(f64, f64)> {
 }
 
 fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box<dyn Error>> {
-    let x_max = data.iter().copied().map(|(x, _)| x).fold(f64::NEG_INFINITY, f64::max);
-    let y_min = data.iter().copied().map(|(_, y)| y).fold(f64::INFINITY, f64::min);
-    let y_max = data.iter().copied().map(|(_, y)| y).fold(f64::NEG_INFINITY, f64::max);
+    let x_max = data
+        .iter()
+        .copied()
+        .map(|(x, _)| x)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let y_min = data
+        .iter()
+        .copied()
+        .map(|(_, y)| y)
+        .fold(f64::INFINITY, f64::min);
+    let y_max = data
+        .iter()
+        .copied()
+        .map(|(_, y)| y)
+        .fold(f64::NEG_INFINITY, f64::max);
     let y_pad = (y_max - y_min).max(1e-6) * 0.1;
 
     let root = SVGBackend::new(output, (1200, 600)).into_drawing_area();
@@ -84,18 +101,15 @@ fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box
         chart
             .draw_series(LineSeries::new(smoothed.iter().copied(), &BLUE))?
             .label(format!("MA-{window}"))
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE));
     } else {
         chart
             .draw_series(LineSeries::new(data.iter().copied(), &BLUE))?
             .label("train loss")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE));
     }
 
-    chart
-        .configure_series_labels()
-        .border_style(BLACK)
-        .draw()?;
+    chart.configure_series_labels().border_style(BLACK).draw()?;
 
     root.present()?;
     Ok(())
