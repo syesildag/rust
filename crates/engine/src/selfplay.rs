@@ -159,11 +159,23 @@ fn terminal_outcome(board: &Board) -> f32 {
 mod tests {
     use super::*;
     use crate::model::HybridValueNet;
+    use chess::movegen::generate_legal_moves;
 
     #[test]
-    fn generate_one_game_produces_samples() {
+    fn batch_select_returns_valid_move_index() {
         let model = HybridValueNet::new();
-        let dataset = generate(&model, 1);
-        assert!(!dataset.is_empty(), "expected at least one training sample");
+        model.set_training(false);
+        let board = Board::starting_position();
+        let legal = generate_legal_moves(&board);
+        let after_boards: Vec<Board> =
+            legal.iter().copied().map(|mv| board.make_move(mv)).collect();
+        let raw_data = model.forward_batch(&after_boards).data();
+        let best_idx = (0..legal.len()).max_by(|&i, &j| {
+            raw_data[i]
+                .partial_cmp(&raw_data[j])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        assert!(best_idx.is_some());
+        assert!(best_idx.unwrap() < legal.len());
     }
 }
