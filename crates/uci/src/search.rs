@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chess::board::Board;
 use chess::movegen::generate_legal_moves;
 use chess::moves::Move;
@@ -10,7 +12,7 @@ pub fn best_move(_model: &HybridValueNet, _board: &Board) -> Option<Move> {
 }
 
 pub fn parse_uci_move(board: &Board, s: &str) -> Option<Move> {
-    if s.len() < 4 {
+    if s.len() < 4 || !s.is_ascii() {
         return None;
     }
     let from = Square::from_algebraic(&s[0..2])?;
@@ -22,6 +24,9 @@ pub fn parse_uci_move(board: &Board, s: &str) -> Option<Move> {
         'n' => Some(PieceKind::Knight),
         _ => None,
     });
+    if s.len() > 4 && promo.is_none() {
+        return None;
+    }
     generate_legal_moves(board)
         .into_iter()
         .find(|mv| mv.from == from && mv.to == to && mv.promotion == promo)
@@ -44,11 +49,12 @@ mod tests {
 
     #[test]
     fn parse_promotion_move() {
-        // White pawn on e7, ready to promote.
         let board = chess::fen::from_fen("8/4P3/8/8/8/8/8/4K2k w - - 0 1").unwrap();
         let mv = parse_uci_move(&board, "e7e8q");
         assert!(mv.is_some());
         let mv = mv.unwrap();
+        assert_eq!(mv.from, Square::from_algebraic("e7").unwrap());
+        assert_eq!(mv.to, Square::from_algebraic("e8").unwrap());
         assert_eq!(mv.promotion, Some(PieceKind::Queen));
     }
 
@@ -63,5 +69,11 @@ mod tests {
         let board = Board::starting_position();
         assert!(parse_uci_move(&board, "xyz").is_none());
         assert!(parse_uci_move(&board, "").is_none());
+    }
+
+    #[test]
+    fn parse_unknown_promo_char_returns_none() {
+        let board = chess::fen::from_fen("8/4P3/8/8/8/8/8/4K2k w - - 0 1").unwrap();
+        assert!(parse_uci_move(&board, "e7e8x").is_none());
     }
 }
