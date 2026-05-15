@@ -4,6 +4,7 @@ use chess::moves::Move;
 use chess::piece::{Color, PieceKind};
 use chess::square::Square;
 use engine::model::HybridValueNet;
+use tracing::info;
 
 pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<(Move, f32)> {
     let legal = generate_legal_moves(board);
@@ -15,7 +16,9 @@ pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<(Move, f32)> {
         .copied()
         .map(|mv| board.make_move(mv))
         .collect();
+    info!(n = after_boards.len(), "forward_batch: start");
     let raw = model.forward_batch(&after_boards).data();
+    info!("forward_batch: done");
     let sign = match board.side_to_move {
         Color::White => 1.0_f32,
         Color::Black => -1.0_f32,

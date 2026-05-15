@@ -5,7 +5,7 @@ use engine::model::HybridValueNet;
 use engine::persist::Persist;
 use search::{best_move, parse_uci_move};
 use std::io::{self, BufRead, Write};
-use tracing::warn;
+use tracing::{info, warn};
 
 const ENGINE_NAME: &str = "HybridNet";
 const ENGINE_AUTHOR: &str = "serkan";
@@ -69,7 +69,9 @@ impl UciEngine {
 fn main() {
     tracing_subscriber::fmt().with_writer(io::stderr).init();
 
+    info!("engine starting");
     let mut engine = UciEngine::new();
+    info!("engine ready");
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
@@ -94,8 +96,10 @@ fn main() {
                 engine.handle_position(rest);
             }
             ["go", ..] => {
+                info!("go: computing move");
                 match best_move(&engine.model, &engine.board) {
                     Some((mv, eval)) => {
+                        info!(%mv, eval, "go: move computed");
                         let mv_str = mv.to_string();
                         #[allow(clippy::cast_possible_truncation)]
                         let score_cp = (eval * 1000.0).round() as i32;
