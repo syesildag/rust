@@ -7,9 +7,20 @@ use search::{best_move, parse_uci_move};
 use std::io::{self, BufRead, Write};
 use tracing::warn;
 
-const MODEL_PATH: &str = "model.bin";
 const ENGINE_NAME: &str = "HybridNet";
 const ENGINE_AUTHOR: &str = "serkan";
+
+fn find_model_path() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("model.bin");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    std::path::PathBuf::from("model.bin")
+}
 
 struct UciEngine {
     model: HybridValueNet,
@@ -18,11 +29,11 @@ struct UciEngine {
 
 impl UciEngine {
     fn new() -> Self {
-        let model =
-            HybridValueNet::load_from(std::path::Path::new(MODEL_PATH)).unwrap_or_else(|e| {
-                warn!(error = %e, "no saved model — using random weights");
-                HybridValueNet::default()
-            });
+        let model_path = find_model_path();
+        let model = HybridValueNet::load_from(&model_path).unwrap_or_else(|e| {
+            warn!(error = %e, path = %model_path.display(), "no saved model — using random weights");
+            HybridValueNet::default()
+        });
         model.set_training(false);
         Self {
             model,
@@ -83,11 +94,18 @@ fn main() {
                 engine.handle_position(rest);
             }
             ["go", ..] => {
-                let mv_str = match best_move(&engine.model, &engine.board) {
-                    Some(mv) => mv.to_string(),
-                    None => "0000".to_string(),
-                };
-                writeln!(out, "bestmove {mv_str}").ok();
+                match best_move(&engine.model, &engine.board) {
+                    Some((mv, eval)) => {
+                        let mv_str = mv.to_string();
+                        #[allow(clippy::cast_possible_truncation)]
+                        let score_cp = (eval * 1000.0).round() as i32;
+                        writeln!(out, "info depth 1 score cp {score_cp} pv {mv_str}").ok();
+                        writeln!(out, "bestmove {mv_str}").ok();
+                    }
+                    None => {
+                        writeln!(out, "bestmove 0000").ok();
+                    }
+                }
                 out.flush().ok();
             }
             ["quit", ..] => break,

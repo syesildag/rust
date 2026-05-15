@@ -5,7 +5,7 @@ use chess::piece::{Color, PieceKind};
 use chess::square::Square;
 use engine::model::HybridValueNet;
 
-pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<Move> {
+pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<(Move, f32)> {
     let legal = generate_legal_moves(board);
     if legal.is_empty() {
         return None;
@@ -26,7 +26,7 @@ pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<Move> {
                 .partial_cmp(&(sign * raw[j]))
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .map(|i| legal[i])
+        .map(|i| (legal[i], sign * raw[i]))
 }
 
 pub fn parse_uci_move(board: &Board, s: &str) -> Option<Move> {
@@ -101,9 +101,11 @@ mod tests {
         model.set_training(false);
         let board = Board::starting_position();
         let legal = generate_legal_moves(&board);
-        let mv = best_move(&model, &board);
-        assert!(mv.is_some());
-        assert!(legal.contains(&mv.unwrap()));
+        let result = best_move(&model, &board);
+        assert!(result.is_some());
+        let (mv, score) = result.unwrap();
+        assert!(legal.contains(&mv));
+        assert!(score.is_finite());
     }
 
     #[test]
