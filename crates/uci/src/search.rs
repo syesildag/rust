@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use chess::board::Board;
 use chess::movegen::generate_legal_moves;
 use chess::moves::Move;
