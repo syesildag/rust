@@ -5,14 +5,10 @@ use chess::piece::PieceKind;
 use chess::square::Square;
 use engine::model::HybridValueNet;
 
-#[allow(dead_code)]
-#[must_use]
 pub fn best_move(_model: &HybridValueNet, _board: &Board) -> Option<Move> {
     todo!()
 }
 
-#[allow(dead_code)]
-#[must_use]
 pub fn parse_uci_move(board: &Board, s: &str) -> Option<Move> {
     if s.len() < 4 {
         return None;
