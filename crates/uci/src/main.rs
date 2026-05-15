@@ -66,13 +66,13 @@ fn main() {
         let Ok(line) = line else { break };
         let tokens: Vec<&str> = line.split_whitespace().collect();
         match tokens.as_slice() {
-            ["uci"] => {
+            ["uci", ..] => {
                 writeln!(out, "id name {ENGINE_NAME}").ok();
                 writeln!(out, "id author {ENGINE_AUTHOR}").ok();
                 writeln!(out, "uciok").ok();
                 out.flush().ok();
             }
-            ["isready"] => {
+            ["isready", ..] => {
                 writeln!(out, "readyok").ok();
                 out.flush().ok();
             }
@@ -90,7 +90,7 @@ fn main() {
                 writeln!(out, "bestmove {mv_str}").ok();
                 out.flush().ok();
             }
-            ["quit"] => break,
+            ["quit", ..] => break,
             _ => {}
         }
     }
