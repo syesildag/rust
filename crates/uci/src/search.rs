@@ -1,12 +1,11 @@
 use chess::board::Board;
 use chess::movegen::generate_legal_moves;
 use chess::moves::Move;
-use chess::piece::PieceKind;
+use chess::piece::{Color, PieceKind};
 use chess::square::Square;
 use engine::model::HybridValueNet;
 
 pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<Move> {
-    use chess::piece::Color;
     let legal = generate_legal_moves(board);
     if legal.is_empty() {
         return None;
@@ -113,6 +112,8 @@ mod tests {
         let board =
             chess::fen::from_fen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")
                 .unwrap();
-        assert!(best_move(&HybridValueNet::new(), &board).is_none());
+        let model = HybridValueNet::new();
+        model.set_training(false);
+        assert!(best_move(&model, &board).is_none());
     }
 }

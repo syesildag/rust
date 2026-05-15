@@ -76,7 +76,7 @@ fn main() {
                 writeln!(out, "readyok").ok();
                 out.flush().ok();
             }
-            ["ucinewgame"] => {
+            ["ucinewgame", ..] => {
                 engine.board = Board::starting_position();
             }
             ["position", rest @ ..] => {
