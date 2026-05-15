@@ -7,8 +7,25 @@ use chess::piece::PieceKind;
 use chess::square::Square;
 use engine::model::HybridValueNet;
 
-pub fn best_move(_model: &HybridValueNet, _board: &Board) -> Option<Move> {
-    todo!()
+pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<Move> {
+    use chess::piece::Color;
+    let legal = generate_legal_moves(board);
+    if legal.is_empty() {
+        return None;
+    }
+    let after_boards: Vec<Board> = legal.iter().copied().map(|mv| board.make_move(mv)).collect();
+    let raw = model.forward_batch(&after_boards).data();
+    let sign = match board.side_to_move {
+        Color::White =>  1.0_f32,
+        Color::Black => -1.0_f32,
+    };
+    (0..legal.len())
+        .max_by(|&i, &j| {
+            (sign * raw[i])
+                .partial_cmp(&(sign * raw[j]))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|i| legal[i])
 }
 
 pub fn parse_uci_move(board: &Board, s: &str) -> Option<Move> {
@@ -75,5 +92,26 @@ mod tests {
     fn parse_unknown_promo_char_returns_none() {
         let board = chess::fen::from_fen("8/4P3/8/8/8/8/8/4K2k w - - 0 1").unwrap();
         assert!(parse_uci_move(&board, "e7e8x").is_none());
+    }
+
+    #[test]
+    fn best_move_returns_legal_move() {
+        let model = HybridValueNet::new();
+        model.set_training(false);
+        let board = Board::starting_position();
+        let legal = generate_legal_moves(&board);
+        let mv = best_move(&model, &board);
+        assert!(mv.is_some());
+        assert!(legal.contains(&mv.unwrap()));
+    }
+
+    #[test]
+    fn best_move_returns_none_when_no_legal_moves() {
+        // Checkmate position: Fool's Mate — White is checkmated.
+        let board = chess::fen::from_fen(
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3",
+        )
+        .unwrap();
+        assert!(best_move(&HybridValueNet::new(), &board).is_none());
     }
 }
