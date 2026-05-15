@@ -59,7 +59,15 @@ cp model.bin target/release/model.bin
 | `go [any options]` | `info …` · `bestmove <move>` | Selects and returns best move |
 | `quit` | *(exits)* | Terminates the process |
 
-All options passed to `go` (depth, time controls, etc.) are silently ignored — the engine always does a single 1-ply search.
+The `go` command accepts an optional `depth` token (`go depth N`). All other options (time controls, etc.) are ignored.
+
+| Depth | Leaves | Move time (Apple M-series, release) |
+|-------|--------|-------------------------------------|
+| 1 (default) | ~20 | ~2 s |
+| 2 | ~400 | ~18 s |
+| 3 | ~8900 | several minutes |
+
+The high per-move cost comes from the tensor library performing a CPU read-back after every GPU operation (~55 ms/op × ~120 ops per forward pass).
 
 ### `go` output
 
@@ -76,15 +84,18 @@ If no legal moves exist (checkmate or stalemate) the engine responds with `bestm
 
 ## Move selection algorithm (`search.rs`)
 
-The engine uses **greedy 1-ply search** — no tree, no Monte Carlo, no iterative deepening.
+The engine uses **batch minimax** — a full minimax tree expansion followed by a single batched evaluation of all leaf positions.
 
 ```
-for every legal move in the current position:
-    apply the move → get the resulting board
-evaluate all resulting boards in one batched forward pass through HybridNet
-pick the move whose resulting position has the highest value
-    from the current player's perspective
+1. Expand the full minimax tree to `depth` plies (CPU only).
+2. Collect every leaf board into a flat Vec<Board>.
+3. Evaluate all leaves in chunked forward_batch() calls (GPU).
+4. Propagate minimax values back up the tree using the same
+   pre-order traversal that collected the leaves.
+5. Return the root child with the best minimax value.
 ```
+
+At the default depth of 1 the leaf set is the ~20 legal moves from the root — equivalent to greedy 1-ply. Deeper searches are supported via `go depth N` at the cost of proportionally more GPU time.
 
 ### Sign convention
 
@@ -104,14 +115,14 @@ let sign = match board.side_to_move {
 The selected move and its signed score are returned together:
 
 ```rust
-pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<(Move, f32)>
+pub fn best_move(model: &HybridValueNet, board: &Board, depth: u32) -> Option<(Move, f32)>
 ```
 
 The returned score is already from the **current player's perspective** (always positive when winning), which is what the GUI-facing centipawn conversion expects.
 
 ### Batch inference
 
-All successor positions are evaluated in a **single call** to `model.forward_batch()`, which is substantially faster than calling `model.forward()` once per legal move. At the starting position this means one batch of 20 positions; mid-game batches are typically 20–40.
+All leaf positions are evaluated in **chunked calls** to `model.forward_batch()`. Each chunk is capped at 120 boards to respect Metal's workgroup-dispatch and buffer-binding limits. At depth 1 the leaf set fits in a single chunk (~20 boards); deeper searches require multiple chunks.
 
 ---
 

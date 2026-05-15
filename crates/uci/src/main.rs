@@ -3,7 +3,7 @@ mod search;
 use chess::board::Board;
 use engine::model::HybridValueNet;
 use engine::persist::Persist;
-use search::{best_move, parse_uci_move};
+use search::{best_move, parse_uci_move, SEARCH_DEPTH};
 use std::io::{self, BufRead, Write};
 use tracing::{info, warn};
 
@@ -95,15 +95,20 @@ fn main() {
             ["position", rest @ ..] => {
                 engine.handle_position(rest);
             }
-            ["go", ..] => {
-                info!("go: computing move");
-                match best_move(&engine.model, &engine.board) {
+            ["go", rest @ ..] => {
+                let depth = rest
+                    .windows(2)
+                    .find(|w| w[0] == "depth")
+                    .and_then(|w| w[1].parse::<u32>().ok())
+                    .unwrap_or(SEARCH_DEPTH);
+                info!(depth, "go: computing move");
+                match best_move(&engine.model, &engine.board, depth) {
                     Some((mv, eval)) => {
                         info!(%mv, eval, "go: move computed");
                         let mv_str = mv.to_string();
                         #[allow(clippy::cast_possible_truncation)]
                         let score_cp = (eval * 1000.0).round() as i32;
-                        writeln!(out, "info depth 1 score cp {score_cp} pv {mv_str}").ok();
+                        writeln!(out, "info depth {depth} score cp {score_cp} pv {mv_str}").ok();
                         writeln!(out, "bestmove {mv_str}").ok();
                     }
                     None => {
