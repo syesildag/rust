@@ -167,8 +167,11 @@ mod tests {
         model.set_training(false);
         let board = Board::starting_position();
         let legal = generate_legal_moves(&board);
-        let after_boards: Vec<Board> =
-            legal.iter().copied().map(|mv| board.make_move(mv)).collect();
+        let after_boards: Vec<Board> = legal
+            .iter()
+            .copied()
+            .map(|mv| board.make_move(mv))
+            .collect();
         let raw_data = model.forward_batch(&after_boards).data();
         let best_idx = (0..legal.len()).max_by(|&i, &j| {
             raw_data[i]

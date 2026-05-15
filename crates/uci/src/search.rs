@@ -11,10 +11,14 @@ pub fn best_move(model: &HybridValueNet, board: &Board) -> Option<Move> {
     if legal.is_empty() {
         return None;
     }
-    let after_boards: Vec<Board> = legal.iter().copied().map(|mv| board.make_move(mv)).collect();
+    let after_boards: Vec<Board> = legal
+        .iter()
+        .copied()
+        .map(|mv| board.make_move(mv))
+        .collect();
     let raw = model.forward_batch(&after_boards).data();
     let sign = match board.side_to_move {
-        Color::White =>  1.0_f32,
+        Color::White => 1.0_f32,
         Color::Black => -1.0_f32,
     };
     (0..legal.len())
@@ -106,10 +110,9 @@ mod tests {
     #[test]
     fn best_move_returns_none_when_no_legal_moves() {
         // Checkmate position: Fool's Mate — White is checkmated.
-        let board = chess::fen::from_fen(
-            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3",
-        )
-        .unwrap();
+        let board =
+            chess::fen::from_fen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")
+                .unwrap();
         assert!(best_move(&HybridValueNet::new(), &board).is_none());
     }
 }

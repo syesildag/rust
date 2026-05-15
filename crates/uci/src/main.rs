@@ -18,13 +18,16 @@ struct UciEngine {
 
 impl UciEngine {
     fn new() -> Self {
-        let model = HybridValueNet::load_from(std::path::Path::new(MODEL_PATH))
-            .unwrap_or_else(|e| {
+        let model =
+            HybridValueNet::load_from(std::path::Path::new(MODEL_PATH)).unwrap_or_else(|e| {
                 warn!(error = %e, "no saved model — using random weights");
                 HybridValueNet::default()
             });
         model.set_training(false);
-        Self { model, board: Board::starting_position() }
+        Self {
+            model,
+            board: Board::starting_position(),
+        }
     }
 
     fn handle_position(&mut self, tokens: &[&str]) {
@@ -36,11 +39,10 @@ impl UciEngine {
         } else if tokens.first() == Some(&"fen") {
             let fen_end = moves_idx.unwrap_or(tokens.len());
             let fen = tokens[1..fen_end].join(" ");
-            chess::fen::from_fen(&fen)
-                .unwrap_or_else(|e| {
-                    warn!(error = %e, %fen, "invalid FEN — using starting position");
-                    Board::starting_position()
-                })
+            chess::fen::from_fen(&fen).unwrap_or_else(|e| {
+                warn!(error = %e, %fen, "invalid FEN — using starting position");
+                Board::starting_position()
+            })
         } else {
             Board::starting_position()
         };
@@ -54,9 +56,7 @@ impl UciEngine {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(io::stderr)
-        .init();
+    tracing_subscriber::fmt().with_writer(io::stderr).init();
 
     let mut engine = UciEngine::new();
     let stdout = io::stdout();
