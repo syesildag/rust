@@ -384,6 +384,84 @@ pub fn train(cfg: TrainConfig) {
 
 ---
 
+## Phase 9b — Learning Rate Schedule (Warmup + Cosine Decay)
+
+**Files changed:**
+- `crates/tensor/src/optim.rs` — `Adam::set_lr`, `Adam::lr`
+- `crates/engine/src/train.rs` — `TrainConfig::max_lr`, `TrainConfig::warmup_steps`, `scheduled_lr`
+- `crates/cli/src/main.rs` — `--max-lr`, `--warmup` flags
+
+### Motivation
+
+A fixed learning rate creates a dilemma: too high (≥ 2×10⁻⁴) causes divergence because Adam's second-moment estimates $\hat{v}$ are poorly initialised at step 0; too low (1×10⁻⁴) converges slowly. A warmup + cosine-decay schedule resolves this by letting the moment estimates stabilise before the LR peaks, then reducing noise in the final training phase.
+
+### Schedule
+
+The schedule is driven by the global optimizer step $t$ (0-indexed, starting from `adam.state().0` after each `step()` call).
+
+Let:
+- $\alpha_{\min}$ = `cfg.lr` — base / floor learning rate
+- $\alpha_{\max}$ = `cfg.max_lr` — peak learning rate
+- $T_w$ = `cfg.warmup_steps` — warmup duration
+- $T$ = `total_steps` = $\text{epochs} \times \lceil |\mathcal{D}| / B \rceil$ — total estimated optimizer steps
+
+**Warmup phase** ($t < T_w$): linear ramp from $\alpha_{\min}$ to $\alpha_{\max}$
+
+$$\alpha_t = \alpha_{\min} + (\alpha_{\max} - \alpha_{\min}) \cdot \frac{t}{T_w}$$
+
+**Cosine-decay phase** ($T_w \le t \le T$): smooth decay back to $\alpha_{\min}$
+
+$$\alpha_t = \alpha_{\min} + \frac{\alpha_{\max} - \alpha_{\min}}{2} \left(1 + \cos\!\left(\frac{\pi\,(t - T_w)}{T - T_w}\right)\right)$$
+
+The curve looks like this (for $\alpha_{\min}=10^{-4}$, $\alpha_{\max}=3{\times}10^{-4}$, $T_w = 500$):
+
+```
+α
+3e-4 |    *
+     |   * *
+     |  *   *
+     | *     *
+     |*       **
+2e-4 |          **
+     |            ***
+     |               ****
+1e-4 |___________________*****→  t
+     0  Tw               T
+```
+
+### Implementation notes
+
+- Scheduling is **opt-in**: if `max_lr == lr` (the default) `use_schedule` is `false` and the LR is never mutated — existing behaviour is fully preserved.
+- `Adam::set_lr` updates `self.lr` in place; the moment vectors are untouched, so warm-starting from a saved `.adam` file is safe.
+- The schedule is applied *after* `adam.step()` so step $t$ uses the LR that was current when the gradients were computed. The updated LR takes effect on step $t+1$.
+- The `info!` log line now includes `lr = adam.lr()` so you can verify the ramp in the trace output.
+
+### Updated `TrainConfig`
+
+```rust
+pub struct TrainConfig {
+    pub pgn_paths:     Vec<PathBuf>,
+    pub epochs:        usize,      // default 20
+    pub batch_size:    usize,      // default 32
+    pub lr:            f32,        // base LR — default 1e-4
+    pub max_lr:        f32,        // peak LR — default 1e-4 (= lr → no schedule)
+    pub warmup_steps:  usize,      // default 0
+    pub output:        PathBuf,
+}
+```
+
+### Recommended starting point
+
+```bash
+cargo run -p cli --release -- train \
+  --games selfplay/*.pgn \
+  --lr 1e-4 --max-lr 3e-4 --warmup 500
+```
+
+With 20 epochs and ~30 000 positions at batch 32 the total step count is ≈18 750, so a 500-step warmup corresponds to roughly the first 2.5% of training — long enough to seed Adam's moments, short enough not to delay convergence.
+
+---
+
 ## Phase 10 — `engine` crate: Self-Play
 
 **File:** `crates/engine/src/selfplay.rs`
