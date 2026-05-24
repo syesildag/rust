@@ -130,6 +130,17 @@ impl Adam {
         }
     }
 
+    /// Sets the learning rate, allowing external schedulers to adjust it each step.
+    pub fn set_lr(&mut self, lr: f32) {
+        self.lr = lr;
+    }
+
+    /// Returns the current learning rate.
+    #[must_use]
+    pub fn lr(&self) -> f32 {
+        self.lr
+    }
+
     /// Returns `(t, m, v)` — the step counter and per-parameter moment slices needed for serialisation.
     #[must_use]
     pub fn state(&self) -> (usize, &[Vec<f32>], &[Vec<f32>]) {

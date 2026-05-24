@@ -21,8 +21,15 @@ pub struct TrainConfig {
     pub epochs: usize,
     /// Mini-batch size.
     pub batch_size: usize,
-    /// Adam learning rate.
+    /// Base (minimum) Adam learning rate used at the start and end of the schedule.
     pub lr: f32,
+    /// Peak learning rate reached at the end of warmup.
+    /// If equal to `lr`, the schedule is disabled and `lr` is used as a constant.
+    pub max_lr: f32,
+    /// Number of optimizer steps over which the LR linearly increases from `lr` to
+    /// `max_lr`. After warmup the LR follows a cosine decay back to `lr`. Set to
+    /// `0` to skip warmup (cosine decay still applies if `max_lr > lr`).
+    pub warmup_steps: usize,
     /// Path where the trained model is written.
     pub output: PathBuf,
 }
@@ -34,8 +41,26 @@ impl Default for TrainConfig {
             epochs: 20,
             batch_size: 32,
             lr: 1e-4,
+            max_lr: 1e-4,
+            warmup_steps: 0,
             output: PathBuf::from("model.bin"),
         }
+    }
+}
+
+/// Computes the scheduled learning rate for the given optimizer step.
+///
+/// - Steps `0..warmup_steps`: linear ramp from `base_lr` → `max_lr`.
+/// - Steps `warmup_steps..total_steps`: cosine decay from `max_lr` → `base_lr`.
+fn scheduled_lr(step: usize, base_lr: f32, max_lr: f32, warmup_steps: usize, total_steps: usize) -> f32 {
+    if step < warmup_steps {
+        let progress = step as f32 / warmup_steps.max(1) as f32;
+        base_lr + (max_lr - base_lr) * progress
+    } else {
+        let decay_steps = total_steps.saturating_sub(warmup_steps).max(1);
+        let t = (step - warmup_steps) as f32;
+        let progress = (t / decay_steps as f32).min(1.0);
+        base_lr + 0.5 * (max_lr - base_lr) * (1.0 + (std::f32::consts::PI * progress).cos())
     }
 }
 
@@ -99,10 +124,20 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
+    // Estimate total optimizer steps for the cosine-decay schedule.
+    // The dataset is shuffled each epoch so the batch count is stable across epochs.
+    let use_schedule = cfg.max_lr > cfg.lr;
+    let batches_per_epoch = dataset.len().div_ceil(cfg.batch_size);
+    let total_steps = cfg.epochs * batches_per_epoch;
+
     info!(
         positions = dataset.len(),
         epochs = cfg.epochs,
         batch_size = cfg.batch_size,
+        lr = cfg.lr,
+        max_lr = cfg.max_lr,
+        warmup_steps = cfg.warmup_steps,
+        total_steps,
         step_sleep_ms,
         "starting training"
     );
@@ -221,11 +256,19 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             }
             adam.step();
 
+            // Apply warmup + cosine-decay schedule *after* the step so the
+            // next iteration uses the updated LR.
+            if use_schedule {
+                let step = adam.state().0;
+                let new_lr = scheduled_lr(step, cfg.lr, cfg.max_lr, cfg.warmup_steps, total_steps);
+                adam.set_lr(new_lr);
+            }
+
             if step_sleep_ms > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(step_sleep_ms));
             }
 
-            info!(percentage = format!("{pct:.1}%"), loss = loss_val);
+            info!(percentage = format!("{pct:.1}%"), loss = loss_val, lr = adam.lr());
             loss_log.push((epoch, pct, loss_val));
 
             for (board, _, game_id) in &filtered {

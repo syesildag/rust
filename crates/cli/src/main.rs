@@ -70,6 +70,14 @@ fn cmd_train(args: &[String]) {
                 i += 1;
                 cfg.lr = args[i].parse().unwrap_or(1e-4);
             }
+            "--max-lr" => {
+                i += 1;
+                cfg.max_lr = args[i].parse().unwrap_or(cfg.lr);
+            }
+            "--warmup" => {
+                i += 1;
+                cfg.warmup_steps = args[i].parse().unwrap_or(0);
+            }
             "--output" => {
                 i += 1;
                 cfg.output = PathBuf::from(&args[i]);
