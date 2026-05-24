@@ -130,6 +130,18 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     let batches_per_epoch = dataset.len().div_ceil(cfg.batch_size);
     let total_steps = cfg.epochs * batches_per_epoch;
 
+    // After a restart Adam's step counter `t` is already > 0 but `with_params`
+    // always resets the LR to `cfg.lr`.  Fast-forward to the correct schedule
+    // position so the first step after resuming uses the right LR.
+    if use_schedule {
+        let resumed_step = adam.state().0;
+        if resumed_step > 0 {
+            let resumed_lr = scheduled_lr(resumed_step, cfg.lr, cfg.max_lr, cfg.warmup_steps, total_steps);
+            adam.set_lr(resumed_lr);
+            info!(step = resumed_step, lr = resumed_lr, "resumed — fast-forwarded LR schedule");
+        }
+    }
+
     info!(
         positions = dataset.len(),
         epochs = cfg.epochs,
