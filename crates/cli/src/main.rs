@@ -80,11 +80,11 @@ fn cmd_train(args: &[String]) {
             }
             "--reduce-factor" => {
                 i += 1;
-                cfg.lr_reduce_factor = args[i].parse().unwrap_or(0.5);
+                cfg.lr_reduce_factor = args[i].parse().unwrap_or(0.9);
             }
             "--reduce-patience" => {
                 i += 1;
-                cfg.lr_reduce_patience = args[i].parse().unwrap_or(200);
+                cfg.lr_reduce_patience = args[i].parse().unwrap_or(256);
             }
             "--reduce-min-lr" => {
                 i += 1;
