@@ -53,7 +53,7 @@ impl Default for TrainConfig {
             max_lr: 1e-4,
             warmup_steps: 0,
             lr_reduce_factor: 1.0,
-            lr_reduce_patience: 64,
+            lr_reduce_patience: 32,
             lr_reduce_min_lr: 1e-6,
             output: PathBuf::from("model.bin"),
         }

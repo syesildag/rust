@@ -522,7 +522,7 @@ pub struct TrainConfig {
     pub warmup_steps:        usize,   // default 0
     // ── plateau schedule (mutually exclusive with cosine) ────
     pub lr_reduce_factor:    f32,     // default 1.0 (≥ 1.0 → disabled)
-    pub lr_reduce_patience:  usize,   // default 200
+    pub lr_reduce_patience:  usize,   // default 32
     pub lr_reduce_min_lr:    f32,     // default 1e-6
     pub output:              PathBuf,
 }
