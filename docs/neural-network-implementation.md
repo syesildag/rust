@@ -462,6 +462,96 @@ With 20 epochs and ~30 000 positions at batch 32 the total step count is ≈18 7
 
 ---
 
+## Phase 9c — ReduceLROnPlateau (Reactive Schedule)
+
+**Files changed:**
+- `crates/tensor/src/optim.rs` — `ReduceLROnPlateau` struct
+- `crates/engine/src/train.rs` — `TrainConfig::lr_reduce_factor/patience/min_lr`, plateau wiring
+- `crates/cli/src/main.rs` — `--reduce-factor`, `--reduce-patience`, `--reduce-min-lr` flags
+
+### Motivation
+
+The warmup + cosine schedule is *predefined* — it follows a fixed curve regardless of what the loss is actually doing. `ReduceLROnPlateau` is *reactive*: it starts at a high LR and only reduces it when the loss genuinely stops improving. This is useful when you do not want to guess an optimal schedule in advance, or when training data changes between runs.
+
+### Algorithm
+
+Every step, after `adam.step()`, the scheduler receives the current batch loss $\ell_t$:
+
+$$
+\text{improved if} \quad \ell_t < \ell^* \cdot (1 - \tau)
+$$
+
+where $\ell^*$ is the best loss seen so far and $\tau$ is the `threshold` (default $10^{-4}$).
+
+- **Improved** → reset patience counter, update $\ell^* \leftarrow \ell_t$
+- **Not improved** → increment patience counter
+- **Patience exhausted** (counter ≥ `patience`) → reduce LR and reset counter:
+
+$$\alpha \leftarrow \max\!\left(\alpha \cdot f,\; \alpha_{\min}\right)$$
+
+where $f$ is `factor` and $\alpha_{\min}$ is `min_lr`.
+
+### LR decay trace
+
+For `--lr 3e-4 --reduce-factor 0.5 --reduce-patience 300`:
+
+$$3 \times 10^{-4} \xrightarrow{\text{plateau}} 1.5 \times 10^{-4} \xrightarrow{\text{plateau}} 7.5 \times 10^{-5} \xrightarrow{\quad\cdots\quad} \alpha_{\min}$$
+
+Each reduction emits a `WARN` log line:
+```
+WARN plateau detected — LR reduced  lr=0.00015  patience=300
+```
+
+### Conflict with cosine schedule
+
+If both `--max-lr` and `--reduce-factor` are supplied the cosine schedule takes priority and plateau is disabled. A `WARN` is emitted at startup:
+```
+WARN both --max-lr and --reduce-factor are set — cosine schedule takes priority, plateau reduction is disabled
+```
+
+### Updated `TrainConfig`
+
+```rust
+pub struct TrainConfig {
+    pub pgn_paths:           Vec<PathBuf>,
+    pub epochs:              usize,   // default 20
+    pub batch_size:          usize,   // default 32
+    pub lr:                  f32,     // base LR — default 1e-4
+    // ── cosine schedule ──────────────────────────────────────
+    pub max_lr:              f32,     // peak LR — default 1e-4 (= lr → disabled)
+    pub warmup_steps:        usize,   // default 0
+    // ── plateau schedule (mutually exclusive with cosine) ────
+    pub lr_reduce_factor:    f32,     // default 1.0 (≥ 1.0 → disabled)
+    pub lr_reduce_patience:  usize,   // default 200
+    pub lr_reduce_min_lr:    f32,     // default 1e-6
+    pub output:              PathBuf,
+}
+```
+
+### Strategy comparison
+
+| | Cosine (`--max-lr`) | Plateau (`--reduce-factor`) |
+|---|---|---|
+| Type | Predefined | Reactive |
+| Requires knowing total steps | Yes (estimated automatically) | No |
+| Reacts to actual loss | No | Yes |
+| Best when | Dataset is stable, good LR range known | Exploratory runs, unknown dynamics |
+| Resume behaviour | LR fast-forwarded from saved step `t` | Restarts from `cfg.lr` (plateau state lost) |
+
+### Usage
+
+```bash
+# Start high, halve on plateau, floor at 1e-6
+cargo run -p cli --release -- train \
+  --games selfplay/*.pgn \
+  --lr 3e-4 \
+  --reduce-factor 0.5 \
+  --reduce-patience 300 \
+  --reduce-min-lr 1e-6
+```
+
+---
+
 ## Phase 10 — `engine` crate: Self-Play
 
 **File:** `crates/engine/src/selfplay.rs`

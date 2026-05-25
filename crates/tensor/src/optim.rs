@@ -211,6 +211,94 @@ impl Adam {
     }
 }
 
+// ─── ReduceLROnPlateau ────────────────────────────────────────────────────────
+
+/// Reduces the learning rate when the loss stops improving.
+///
+/// After each optimizer step call [`ReduceLROnPlateau::update`] with the
+/// current batch loss. If the loss has not improved by more than `threshold`
+/// (relative) for `patience` consecutive steps, the optimizer's LR is
+/// multiplied by `factor` and the patience counter resets.
+///
+/// # Example
+/// ```ignore
+/// let mut plateau = ReduceLROnPlateau::new(0.5, 200, 1e-4, 1e-6);
+/// // inside the training loop:
+/// adam.step();
+/// plateau.update(loss_val, &mut adam);
+/// ```
+pub struct ReduceLROnPlateau {
+    /// Multiplicative reduction factor applied when a plateau is detected (e.g. `0.5`).
+    factor: f32,
+    /// Number of steps without sufficient improvement before reducing.
+    patience: usize,
+    /// Minimum relative improvement that resets the patience counter.
+    /// A loss must drop below `best * (1 - threshold)` to count as progress.
+    threshold: f32,
+    /// Hard floor — the LR will never be reduced below this value.
+    min_lr: f32,
+    /// Best loss seen so far.
+    best: f32,
+    /// Steps elapsed since the last improvement.
+    wait: usize,
+}
+
+impl ReduceLROnPlateau {
+    /// Creates a new scheduler.
+    ///
+    /// * `factor`    — LR multiplier on plateau (must be in `(0, 1)`)
+    /// * `patience`  — steps to wait before reducing
+    /// * `threshold` — minimum relative improvement to reset patience
+    /// * `min_lr`    — LR floor
+    #[must_use]
+    pub fn new(factor: f32, patience: usize, threshold: f32, min_lr: f32) -> Self {
+        Self {
+            factor,
+            patience,
+            threshold,
+            min_lr,
+            best: f32::INFINITY,
+            wait: 0,
+        }
+    }
+
+    /// Feed the latest loss value; returns `true` when the LR was reduced.
+    ///
+    /// Call this once per optimizer step, **after** `adam.step()`.
+    pub fn update(&mut self, loss: f32, adam: &mut Adam) -> bool {
+        if !loss.is_finite() {
+            return false;
+        }
+        if loss < self.best * (1.0 - self.threshold) {
+            self.best = loss;
+            self.wait = 0;
+            false
+        } else {
+            self.wait += 1;
+            if self.wait >= self.patience {
+                let new_lr = (adam.lr() * self.factor).max(self.min_lr);
+                adam.set_lr(new_lr);
+                self.wait = 0;
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /// Returns how many steps have elapsed without improvement.
+    #[must_use]
+    pub fn wait(&self) -> usize {
+        self.wait
+    }
+
+    /// Returns the best loss seen so far.
+    #[must_use]
+    pub fn best(&self) -> f32 {
+        self.best
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

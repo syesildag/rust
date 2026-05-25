@@ -9,7 +9,7 @@ use crate::position_db::PositionDb;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tensor::optim::Adam;
+use tensor::optim::{Adam, ReduceLROnPlateau};
 use tensor::{ops, Tensor};
 use tracing::{debug, info, info_span, warn};
 
@@ -30,6 +30,15 @@ pub struct TrainConfig {
     /// `max_lr`. After warmup the LR follows a cosine decay back to `lr`. Set to
     /// `0` to skip warmup (cosine decay still applies if `max_lr > lr`).
     pub warmup_steps: usize,
+    /// ReduceLROnPlateau: multiplicative factor applied to the LR when a plateau
+    /// is detected (e.g. `0.5`). Values `>= 1.0` disable plateau reduction.
+    /// Mutually exclusive with `max_lr > lr` (cosine schedule takes priority).
+    pub lr_reduce_factor: f32,
+    /// ReduceLROnPlateau: number of consecutive steps without sufficient
+    /// improvement before the LR is reduced. Default `200`.
+    pub lr_reduce_patience: usize,
+    /// ReduceLROnPlateau: hard floor — the LR will never drop below this value.
+    pub lr_reduce_min_lr: f32,
     /// Path where the trained model is written.
     pub output: PathBuf,
 }
@@ -43,6 +52,9 @@ impl Default for TrainConfig {
             lr: 1e-4,
             max_lr: 1e-4,
             warmup_steps: 0,
+            lr_reduce_factor: 1.0,
+            lr_reduce_patience: 200,
+            lr_reduce_min_lr: 1e-6,
             output: PathBuf::from("model.bin"),
         }
     }
@@ -127,8 +139,26 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
     // Estimate total optimizer steps for the cosine-decay schedule.
     // The dataset is shuffled each epoch so the batch count is stable across epochs.
     let use_schedule = cfg.max_lr > cfg.lr;
+    let use_plateau = cfg.lr_reduce_factor < 1.0;
+    if use_schedule && use_plateau {
+        warn!(
+            max_lr = cfg.max_lr,
+            reduce_factor = cfg.lr_reduce_factor,
+            "both --max-lr and --reduce-factor are set — cosine schedule takes priority, plateau reduction is disabled"
+        );
+    }
+    let use_plateau = use_plateau && !use_schedule;
     let batches_per_epoch = dataset.len().div_ceil(cfg.batch_size);
     let total_steps = cfg.epochs * batches_per_epoch;
+
+    let mut plateau = use_plateau.then(|| {
+        ReduceLROnPlateau::new(
+            cfg.lr_reduce_factor,
+            cfg.lr_reduce_patience,
+            1e-4,
+            cfg.lr_reduce_min_lr,
+        )
+    });
 
     // After a restart Adam's step counter `t` is already > 0 but `with_params`
     // always resets the LR to `cfg.lr`.  Fast-forward to the correct schedule
@@ -149,6 +179,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         lr = cfg.lr,
         max_lr = cfg.max_lr,
         warmup_steps = cfg.warmup_steps,
+        lr_reduce_factor = cfg.lr_reduce_factor,
+        lr_reduce_patience = cfg.lr_reduce_patience,
         total_steps,
         step_sleep_ms,
         "starting training"
@@ -274,6 +306,18 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 let step = adam.state().0;
                 let new_lr = scheduled_lr(step, cfg.lr, cfg.max_lr, cfg.warmup_steps, total_steps);
                 adam.set_lr(new_lr);
+            }
+
+            // ReduceLROnPlateau — only active when cosine schedule is off.
+            if let Some(ref mut p) = plateau {
+                let reduced = p.update(loss_val, &mut adam);
+                if reduced {
+                    warn!(
+                        lr = adam.lr(),
+                        patience = cfg.lr_reduce_patience,
+                        "plateau detected — LR reduced"
+                    );
+                }
             }
 
             if step_sleep_ms > 0 {

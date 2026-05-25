@@ -78,6 +78,18 @@ fn cmd_train(args: &[String]) {
                 i += 1;
                 cfg.warmup_steps = args[i].parse().unwrap_or(0);
             }
+            "--reduce-factor" => {
+                i += 1;
+                cfg.lr_reduce_factor = args[i].parse().unwrap_or(0.5);
+            }
+            "--reduce-patience" => {
+                i += 1;
+                cfg.lr_reduce_patience = args[i].parse().unwrap_or(200);
+            }
+            "--reduce-min-lr" => {
+                i += 1;
+                cfg.lr_reduce_min_lr = args[i].parse().unwrap_or(1e-6);
+            }
             "--output" => {
                 i += 1;
                 cfg.output = PathBuf::from(&args[i]);
