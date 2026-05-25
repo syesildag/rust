@@ -208,6 +208,12 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
     let mut loss_log: Vec<(usize, f32, f32)> = Vec::new();
 
+    // Exponential moving average of the loss — used by ReduceLROnPlateau so
+    // that noisy individual batches do not spuriously reset the patience
+    // counter.  α=0.05 ≈ 20-step window.
+    const EMA_ALPHA: f32 = 0.05;
+    let mut ema_loss: Option<f32> = None;
+
     'training: for epoch in 1..=cfg.epochs {
         let epoch_span = info_span!("epoch", n = epoch, total = cfg.epochs);
         let _epoch_guard = epoch_span.enter();
@@ -329,11 +335,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             }
 
             // ReduceLROnPlateau — only active when cosine schedule is off.
+            // Feed the EMA of the loss, not the raw batch value, so that
+            // random low-loss batches do not spuriously reset the patience
+            // counter and prevent the LR from ever being reduced.
+            let ema = ema_loss.get_or_insert(loss_val);
+            *ema = EMA_ALPHA * loss_val + (1.0 - EMA_ALPHA) * *ema;
             if let Some(ref mut p) = plateau {
-                let reduced = p.update(loss_val, &mut adam);
+                let reduced = p.update(*ema, &mut adam);
                 if reduced {
                     warn!(
                         lr = adam.lr(),
+                        ema_loss = *ema,
                         patience = cfg.lr_reduce_patience,
                         "plateau detected — LR reduced"
                     );
@@ -344,7 +356,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 std::thread::sleep(std::time::Duration::from_millis(step_sleep_ms));
             }
 
-            info!(percentage = format!("{pct:.1}%"), loss = loss_val, lr = adam.lr());
+            info!(percentage = format!("{pct:.1}%"), loss = loss_val, ema_loss = ema_loss.unwrap_or(loss_val), lr = adam.lr());
             loss_log.push((epoch, pct, loss_val));
 
             for (board, _, game_id) in &filtered {
