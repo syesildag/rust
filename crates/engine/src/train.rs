@@ -356,7 +356,7 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 std::thread::sleep(std::time::Duration::from_millis(step_sleep_ms));
             }
 
-            info!(percentage = format!("{pct:.1}%"), loss = loss_val, ema_loss = ema_loss.unwrap_or(loss_val), lr = adam.lr());
+            info!(percentage = format!("{pct:.1}%"), loss = loss_val, ema_loss = ema_loss.unwrap_or(loss_val), lr = adam.lr(), plateau_wait = plateau.as_ref().map(|p| p.wait()));
             loss_log.push((epoch, pct, loss_val));
 
             for (board, _, game_id) in &filtered {
