@@ -186,6 +186,26 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         "starting training"
     );
 
+    if use_schedule {
+        info!(
+            lr = cfg.lr,
+            max_lr = cfg.max_lr,
+            warmup_steps = cfg.warmup_steps,
+            total_steps,
+            "lr strategy: cosine schedule (warmup + cosine decay)"
+        );
+    } else if use_plateau {
+        info!(
+            lr = cfg.lr,
+            reduce_factor = cfg.lr_reduce_factor,
+            reduce_patience = cfg.lr_reduce_patience,
+            reduce_min_lr = cfg.lr_reduce_min_lr,
+            "lr strategy: ReduceLROnPlateau"
+        );
+    } else {
+        info!(lr = cfg.lr, "lr strategy: fixed");
+    }
+
     let mut loss_log: Vec<(usize, f32, f32)> = Vec::new();
 
     'training: for epoch in 1..=cfg.epochs {
