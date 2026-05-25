@@ -84,7 +84,7 @@ fn cmd_train(args: &[String]) {
             }
             "--reduce-patience" => {
                 i += 1;
-                cfg.lr_reduce_patience = args[i].parse().unwrap_or(256);
+                cfg.lr_reduce_patience = args[i].parse().unwrap_or(128);
             }
             "--reduce-min-lr" => {
                 i += 1;
