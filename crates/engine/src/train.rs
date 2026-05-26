@@ -210,8 +210,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
     // Exponential moving average of the loss — used by ReduceLROnPlateau so
     // that noisy individual batches do not spuriously reset the patience
-    // counter.  α=0.05 ≈ 20-step window.
-    const EMA_ALPHA: f32 = 0.05;
+    // counter.  α=0.02 ≈ 50-step window.
+    const EMA_ALPHA: f32 = 0.02;
     let mut ema_loss: Option<f32> = None;
 
     'training: for epoch in 1..=cfg.epochs {
