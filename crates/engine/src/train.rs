@@ -245,14 +245,36 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 filtered.iter().map(|(b, l, _)| ((*b).clone(), *l)).unzip();
             let b = boards.len();
 
-            let preds = model.forward_batch(&boards);
+            let preds_raw = model.forward_batch(&boards);
+            let pred_data = preds_raw.data();
+            let bad_positions: Vec<String> = pred_data
+                .iter()
+                .zip(boards.iter())
+                .filter_map(|(pred, board)| {
+                    if pred.is_finite() {
+                        None
+                    } else {
+                        Some(format!("pred={pred} fen={}", board.to_fen()))
+                    }
+                })
+                .collect();
+            if !bad_positions.is_empty() {
+                warn!(
+                    percentage = format!("{:.1}%", n_samples as f32 / dataset.len() as f32 * 100.0),
+                    batch_size = b,
+                    n_nonfinite_preds = bad_positions.len(),
+                    bad_positions = ?bad_positions,
+                    "non-finite predictions in batch — replaced with 0.0 for loss"
+                );
+            }
+
+            let preds = ops::sanitize_non_finite(&preds_raw, 0.0);
             let targets = Tensor::from_vec(outcomes, &[b, 1]);
             let loss = ops::mse_loss_tensor(&preds, &targets);
 
             let pct = n_samples as f32 / dataset.len() as f32 * 100.0;
             let loss_val = loss.data()[0];
             if !loss_val.is_finite() {
-                let pred_data = preds.data();
                 let finite_preds: Vec<f32> = pred_data
                     .iter()
                     .copied()
@@ -263,17 +285,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     .iter()
                     .copied()
                     .fold(f32::NEG_INFINITY, f32::max);
-                let bad_positions: Vec<String> = pred_data
-                    .iter()
-                    .zip(boards.iter())
-                    .filter_map(|(pred, board)| {
-                        if pred.is_finite() {
-                            None
-                        } else {
-                            Some(format!("pred={pred} fen={}", board.to_fen()))
-                        }
-                    })
-                    .collect();
                 let target_data = targets.data();
                 let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
                 let target_max = target_data

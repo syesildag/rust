@@ -35,7 +35,7 @@ use chess::board::Board;
 use std::io::{Read, Write};
 use tensor::nn::{LayerNorm, Linear, TransformerEncoder};
 use tensor::{ops, Tensor};
-use tracing::trace_span;
+use tracing::{trace_span, warn};
 
 const D_MODEL: usize = 256;
 const NUM_HEADS: usize = 8;
@@ -48,6 +48,56 @@ const NUM_RES: usize = 8;
 const DROPOUT: f32 = 0.1;
 /// Sequence length = 64 squares + 1 CLS token.
 const SEQ_LEN: usize = 65;
+
+fn nonfinite_debug_enabled() -> bool {
+    std::env::var("ENGINE_DEBUG_NONFINITE")
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
+}
+
+fn log_nonfinite_stage(stage: &str, t: &Tensor, boards: &[Board], enabled: bool) {
+    if !enabled {
+        return;
+    }
+
+    let shape = t.shape().to_vec();
+    let data = t.data();
+    let n_nonfinite = data.iter().filter(|v| !v.is_finite()).count();
+    if n_nonfinite == 0 {
+        return;
+    }
+
+    let batch = shape.first().copied().unwrap_or(0);
+    let batch_stride = if batch > 0 { data.len() / batch } else { 0 };
+    let examples: Vec<String> = data
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_finite())
+        .take(3)
+        .map(|(flat_idx, &val)| {
+            let batch_idx = if batch_stride > 0 {
+                flat_idx / batch_stride
+            } else {
+                0
+            };
+            let fen = boards
+                .get(batch_idx)
+                .map_or_else(|| "<unknown>".to_string(), Board::to_fen);
+            format!("flat={flat_idx} batch={batch_idx} val={val} fen={fen}")
+        })
+        .collect();
+
+    warn!(
+        stage,
+        shape = ?shape,
+        n_nonfinite,
+        examples = ?examples,
+        "non-finite activations detected"
+    );
+}
 
 /// Chess hybrid value network combining a ResNet CNN backbone with a Transformer encoder.
 ///
@@ -137,15 +187,19 @@ impl HybridValueNet {
     pub fn forward_batch(&self, boards: &[Board]) -> Tensor {
         let _span = trace_span!("HybridValueNet::forward_batch").entered();
         let b = boards.len();
+        let debug_nonfinite = nonfinite_debug_enabled();
 
         // 1. Encode all boards → [B, 18, 8, 8]
         let x = encode_boards(boards);
+        log_nonfinite_stage("encode_boards", &x, boards, debug_nonfinite);
 
         // 2. CNN backbone → [B, 256, 8, 8]
         let x = self.backbone.forward(&x);
+        log_nonfinite_stage("backbone", &x, boards, debug_nonfinite);
 
         // 3. Reshape → [B, 64, 256]: each spatial position becomes one token.
         let x = x.reshape(&[b, 64, D_MODEL]);
+        log_nonfinite_stage("reshape_tokens", &x, boards, debug_nonfinite);
 
         // 3b. Per-token normalisation before the transformer.
         //     Applied to [B*64, 256] then reshaped back.
@@ -153,19 +207,28 @@ impl HybridValueNet {
             .pre_norm
             .forward(&x.reshape(&[b * 64, D_MODEL]))
             .reshape(&[b, 64, D_MODEL]);
+        log_nonfinite_stage("pre_norm", &x, boards, debug_nonfinite);
 
         // 4. Prepend CLS → [B, 65, 256], then broadcast-add positional embeddings.
         let x = ops::prepend_cls_batched(&self.cls_token, &x);
+        log_nonfinite_stage("prepend_cls", &x, boards, debug_nonfinite);
         let x = ops::broadcast_add_batch(&x, &self.pos_embed);
+        log_nonfinite_stage("add_pos_embed", &x, boards, debug_nonfinite);
 
         // 5. Batched transformer → [B, 65, 256]
         let x = self.encoder.forward_batched(&x, b);
+        log_nonfinite_stage("encoder_batched", &x, boards, debug_nonfinite);
 
         // 6. Extract CLS token (position 0) from every item → [B, 256]
         let x = ops::select_token(&x, 0);
+        log_nonfinite_stage("select_cls", &x, boards, debug_nonfinite);
 
         // 7. Project → [B, 1], tanh → [B, 1]
-        ops::tanh(&self.head.forward(&x))
+        let x = self.head.forward(&x);
+        log_nonfinite_stage("head_linear", &x, boards, debug_nonfinite);
+        let x = ops::tanh(&x);
+        log_nonfinite_stage("head_tanh", &x, boards, debug_nonfinite);
+        x
     }
 
     /// Collects all learnable parameters (for the optimizer).

@@ -2308,6 +2308,59 @@ pub fn clamp(x: &Tensor, min: f32, max: f32) -> Tensor {
     }
 }
 
+// ── sanitize_non_finite ──────────────────────────────────────────────────────
+
+struct SanitizeNonFiniteBackward {
+    input: Tensor,
+    finite_mask: Vec<bool>,
+}
+
+impl GradFn for SanitizeNonFiniteBackward {
+    fn inputs(&self) -> Vec<Tensor> {
+        vec![self.input.clone()]
+    }
+
+    fn backward(&self, g: &[f32]) {
+        if self.input.requires_grad() {
+            let d_input: Vec<f32> = g
+                .iter()
+                .zip(self.finite_mask.iter())
+                .map(|(&gi, &is_finite)| if is_finite { gi } else { 0.0 })
+                .collect();
+            self.input.accumulate_grad(&d_input);
+        }
+    }
+}
+
+/// Replaces all non-finite values (`NaN`, `+Inf`, `-Inf`) with `replacement`.
+///
+/// Gradients pass through unchanged for finite input elements and are zeroed for
+/// replaced (non-finite) elements.
+#[must_use]
+pub fn sanitize_non_finite(x: &Tensor, replacement: f32) -> Tensor {
+    let src = x.data();
+    let shape = x.shape().to_vec();
+    let finite_mask: Vec<bool> = src.iter().map(|v| v.is_finite()).collect();
+    let data: Vec<f32> = src
+        .iter()
+        .zip(finite_mask.iter())
+        .map(|(&v, &is_finite)| if is_finite { v } else { replacement })
+        .collect();
+
+    if x.requires_grad() {
+        Tensor::from_op(
+            data,
+            &shape,
+            Arc::new(SanitizeNonFiniteBackward {
+                input: x.clone(),
+                finite_mask,
+            }),
+        )
+    } else {
+        Tensor::from_vec(data, &shape)
+    }
+}
+
 // ── permute_4d ────────────────────────────────────────────────────────────────
 
 fn permute_4d_data(src: &[f32], in_shape: &[usize; 4], axes: &[usize; 4]) -> Vec<f32> {
@@ -2529,5 +2582,25 @@ mod tests {
         loss.backward();
         // gradient of a sum-of-all-elements through a permute is all-ones
         assert!(x.grad().iter().all(|&g| (g - 1.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn sanitize_non_finite_replaces_values() {
+        let x = Tensor::from_vec(vec![1.0, f32::NAN, f32::INFINITY, -2.0], &[2, 2]);
+        let y = sanitize_non_finite(&x, 0.0);
+        assert_eq!(y.shape(), &[2, 2]);
+        assert_eq!(y.data(), vec![1.0, 0.0, 0.0, -2.0]);
+    }
+
+    #[test]
+    fn sanitize_non_finite_zeroes_grad_for_replaced_entries() {
+        let x = Tensor::from_vec(vec![1.0, f32::NAN, 3.0], &[1, 3]).with_grad();
+        let y = sanitize_non_finite(&x, 0.0);
+        let loss = sum(&y);
+        loss.backward();
+        let g = x.grad();
+        assert!((g[0] - 1.0).abs() < 1e-6);
+        assert!((g[1] - 0.0).abs() < 1e-6);
+        assert!((g[2] - 1.0).abs() < 1e-6);
     }
 }
