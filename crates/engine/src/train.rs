@@ -268,7 +268,11 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                 );
             }
 
-            let preds = ops::sanitize_non_finite(&preds_raw, 0.0);
+            // Reuse the already-captured `pred_data` snapshot so that the same
+            // values used for bad_positions detection are also used for the
+            // sanitized forward tensor.  This avoids a second `data()` read
+            // that could race with any asynchronous GPU write-back.
+            let preds = ops::sanitize_non_finite_from_snapshot(&preds_raw, &pred_data, 0.0);
             let targets = Tensor::from_vec(outcomes, &[b, 1]);
             let loss = ops::mse_loss_tensor(&preds, &targets);
 
@@ -291,6 +295,10 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     .iter()
                     .copied()
                     .fold(f32::NEG_INFINITY, f32::max);
+                // Count residual NaN in both sanitized preds and targets to
+                // diagnose whether sanitize_non_finite_from_snapshot worked.
+                let n_residual_pred_nan = preds.data().iter().filter(|v| !v.is_finite()).count();
+                let n_target_nan = target_data.iter().filter(|v| !v.is_finite()).count();
                 // Log the L2 norm of each parameter tensor.  An exploding norm
                 // (e.g. > 100) points to the source layer of the instability.
                 let param_norms: Vec<String> = model
@@ -310,6 +318,8 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     pred_max,
                     n_nonfinite_preds = bad_positions.len(),
                     bad_positions = ?bad_positions,
+                    n_residual_pred_nan,
+                    n_target_nan,
                     target_min,
                     target_max,
                     param_norms = %param_norms.join(" "),

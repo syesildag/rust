@@ -2339,9 +2339,20 @@ impl GradFn for SanitizeNonFiniteBackward {
 #[must_use]
 pub fn sanitize_non_finite(x: &Tensor, replacement: f32) -> Tensor {
     let src = x.data();
+    sanitize_non_finite_from_snapshot(x, &src, replacement)
+}
+
+/// Like [`sanitize_non_finite`] but uses an externally-supplied snapshot of the
+/// input data instead of re-reading from the tensor.
+///
+/// Use this when you have already called `x.data()` and want to guarantee that
+/// the same data snapshot is used for both NaN-detection and the forward values,
+/// which avoids a second read that could race with asynchronous GPU writes.
+#[must_use]
+pub fn sanitize_non_finite_from_snapshot(x: &Tensor, snapshot: &[f32], replacement: f32) -> Tensor {
     let shape = x.shape().to_vec();
-    let finite_mask: Vec<bool> = src.iter().map(|v| v.is_finite()).collect();
-    let data: Vec<f32> = src
+    let finite_mask: Vec<bool> = snapshot.iter().map(|v| v.is_finite()).collect();
+    let data: Vec<f32> = snapshot
         .iter()
         .zip(finite_mask.iter())
         .map(|(&v, &is_finite)| if is_finite { v } else { replacement })

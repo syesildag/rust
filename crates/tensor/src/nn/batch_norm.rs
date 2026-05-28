@@ -21,7 +21,7 @@ impl BatchNorm2d {
         Self {
             gamma: Tensor::ones(&[num_features]).with_grad(),
             beta: Tensor::zeros(&[num_features]).with_grad(),
-            eps: 1e-5,
+            eps: 1e-3,
         }
     }
 
