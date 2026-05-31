@@ -27,16 +27,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn load_loss(path: &str) -> Result<Vec<(f64, f64)>, Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path(path)?;
-    let mut out = Vec::new();
-    for (i, result) in rdr.records().enumerate() {
+    let mut rows: Vec<(f64, f64)> = Vec::new();
+    for result in rdr.records() {
         let rec = result?;
+        let pct: f64 = rec[1].trim().parse()?;
         let loss: f64 = rec[2].trim().parse()?;
         if loss.is_finite() {
-            #[allow(clippy::cast_precision_loss)]
-            out.push((i as f64, loss));
+            rows.push((pct, loss));
         }
     }
-    Ok(out)
+    let n = rows.len();
+    if n == 0 {
+        return Ok(vec![]);
+    }
+    let max_pct = rows.iter().map(|&(p, _)| p).fold(f64::NEG_INFINITY, f64::max);
+    Ok(rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_, loss))| {
+            #[allow(clippy::cast_precision_loss)]
+            let x = i as f64 / (n - 1) as f64 * max_pct;
+            (x, loss)
+        })
+        .collect())
 }
 
 // Trailing moving average: each output point is the mean of the previous `window` raw points.
@@ -84,7 +97,7 @@ fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box
 
     chart
         .configure_mesh()
-        .x_desc("Batch")
+        .x_desc("Epoch Progress (%)")
         .y_desc("Loss (MSE)")
         .draw()?;
 
