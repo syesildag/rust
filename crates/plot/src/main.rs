@@ -27,23 +27,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn load_loss(path: &str) -> Result<Vec<(f64, f64)>, Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path(path)?;
-    let mut run: Vec<(f64, f64)> = Vec::new();
-    let mut prev_x = f64::NEG_INFINITY;
+    let mut out = Vec::new();
     for result in rdr.records() {
         let rec = result?;
-        let epoch: f64 = rec[0].trim().parse()?;
         let pct: f64 = rec[1].trim().parse()?;
         let loss: f64 = rec[2].trim().parse()?;
         if loss.is_finite() {
-            let x = epoch - 1.0 + pct / 100.0;
-            if x < prev_x - 0.01 {
-                run.clear();
-            }
-            run.push((x, loss));
-            prev_x = x;
+            out.push((pct, loss));
         }
     }
-    Ok(run)
+    Ok(out)
 }
 
 // Trailing moving average: each output point is the mean of the previous `window` raw points.
@@ -91,7 +84,7 @@ fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box
 
     chart
         .configure_mesh()
-        .x_desc("Epoch")
+        .x_desc("Epoch Progress (%)")
         .y_desc("Loss (MSE)")
         .draw()?;
 
@@ -99,7 +92,7 @@ fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box
         // Draw raw data as a faint background series
         chart.draw_series(LineSeries::new(
             data.iter().copied(),
-            RGBColor(180, 200, 230),
+            RGBAColor(180, 200, 230, 0.25),
         ))?;
 
         let smoothed = moving_average(data, window);
