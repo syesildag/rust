@@ -28,12 +28,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn load_loss(path: &str) -> Result<Vec<(f64, f64)>, Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path(path)?;
     let mut out = Vec::new();
-    for result in rdr.records() {
+    for (i, result) in rdr.records().enumerate() {
         let rec = result?;
-        let pct: f64 = rec[1].trim().parse()?;
         let loss: f64 = rec[2].trim().parse()?;
         if loss.is_finite() {
-            out.push((pct, loss));
+            #[allow(clippy::cast_precision_loss)]
+            out.push((i as f64, loss));
         }
     }
     Ok(out)
@@ -84,7 +84,7 @@ fn plot_loss(data: &[(f64, f64)], output: &str, window: usize) -> Result<(), Box
 
     chart
         .configure_mesh()
-        .x_desc("Epoch Progress (%)")
+        .x_desc("Batch")
         .y_desc("Loss (MSE)")
         .draw()?;
 
