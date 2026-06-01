@@ -264,43 +264,31 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     batch_size = b,
                     n_nonfinite_preds = bad_positions.len(),
                     bad_positions = ?bad_positions,
-                    "non-finite predictions in batch — replaced with 0.0 for loss"
+                    "non-finite predictions in batch — skipping batch (set ENGINE_DEBUG_NONFINITE=1 to trace the source layer)"
                 );
+                // NaN activations are stored in the computation graph; calling backward()
+                // would propagate them via 0.0 * NaN = NaN, poisoning all gradients.
+                // Skipping entirely is equivalent to the old sanitize+clip_grad_norm path
+                // but avoids the wasted backward pass and the misleading second warning.
+                continue;
             }
 
-            // Reuse the already-captured `pred_data` snapshot so that the same
-            // values used for bad_positions detection are also used for the
-            // sanitized forward tensor.  This avoids a second `data()` read
-            // that could race with any asynchronous GPU write-back.
-            let preds = ops::sanitize_non_finite_from_snapshot(&preds_raw, &pred_data, 0.0);
             let targets = Tensor::from_vec(outcomes, &[b, 1]);
-            let loss = ops::mse_loss_tensor(&preds, &targets);
+            let loss = ops::mse_loss_tensor(&preds_raw, &targets);
 
             let pct = n_samples as f32 / dataset.len() as f32 * 100.0;
             let loss_val = loss.data()[0];
             if !loss_val.is_finite() {
-                let finite_preds: Vec<f32> = pred_data
-                    .iter()
-                    .copied()
-                    .filter(|v| v.is_finite())
-                    .collect();
-                let pred_min = finite_preds.iter().copied().fold(f32::INFINITY, f32::min);
-                let pred_max = finite_preds
-                    .iter()
-                    .copied()
-                    .fold(f32::NEG_INFINITY, f32::max);
+                // Safety net: all predictions passed the finite check above so this
+                // should not happen with MSE, but log param norms to help diagnose.
+                let pred_min = pred_data.iter().copied().fold(f32::INFINITY, f32::min);
+                let pred_max = pred_data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                 let target_data = targets.data();
                 let target_min = target_data.iter().copied().fold(f32::INFINITY, f32::min);
                 let target_max = target_data
                     .iter()
                     .copied()
                     .fold(f32::NEG_INFINITY, f32::max);
-                // Count residual NaN in both sanitized preds and targets to
-                // diagnose whether sanitize_non_finite_from_snapshot worked.
-                let n_residual_pred_nan = preds.data().iter().filter(|v| !v.is_finite()).count();
-                let n_target_nan = target_data.iter().filter(|v| !v.is_finite()).count();
-                // Log the L2 norm of each parameter tensor.  An exploding norm
-                // (e.g. > 100) points to the source layer of the instability.
                 let param_norms: Vec<String> = model
                     .parameters()
                     .iter()
@@ -316,10 +304,6 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
                     batch_size = b,
                     pred_min,
                     pred_max,
-                    n_nonfinite_preds = bad_positions.len(),
-                    bad_positions = ?bad_positions,
-                    n_residual_pred_nan,
-                    n_target_nan,
                     target_min,
                     target_max,
                     param_norms = %param_norms.join(" "),
@@ -329,15 +313,15 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
             }
 
             loss.backward();
+            // Capture first non-finite gradient BEFORE clip_grad_norm zeroes all
+            // gradients — searching after the zero would always return None.
+            let first_bad = model
+                .parameters()
+                .iter()
+                .enumerate()
+                .find(|(_, p)| p.grad().iter().any(|g| !g.is_finite()))
+                .map(|(i, _)| i);
             if !adam.clip_grad_norm(1.0) {
-                // Find the first parameter whose gradient went non-finite to help
-                // trace which layer is the source of the numerical instability.
-                let first_bad = model
-                    .parameters()
-                    .iter()
-                    .enumerate()
-                    .find(|(_, p)| p.grad().iter().any(|g| !g.is_finite()))
-                    .map(|(i, _)| i);
                 warn!(
                     percentage = format!("{pct:.1}%"),
                     first_nonfinite_param = ?first_bad,
