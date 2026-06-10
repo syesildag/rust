@@ -58,7 +58,14 @@ impl GpuContext {
     }
 
     async fn try_new_async() -> Option<Arc<Self>> {
-        let instance = wgpu::Instance::default();
+        // Exclude the OpenGL/EGL backend so Mesa is never probed on Linux/WSL2,
+        // avoiding the "failed to get driver name" stderr spam.
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN
+                | wgpu::Backends::DX12
+                | wgpu::Backends::METAL,
+            ..Default::default()
+        });
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
