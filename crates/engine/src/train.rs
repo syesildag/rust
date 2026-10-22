@@ -119,17 +119,17 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&shutdown);
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .build()
-            .expect("tokio signal runtime");
-        rt.block_on(async {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                shutdown_flag.store(true, Ordering::SeqCst);
-            }
-        });
-    });
+    // `ctrlc` installs a native console-control / signal handler that is
+    // reliable inside the Windows VSCode terminal (ConPTY): it hooks
+    // CTRL_C_EVENT *and* CTRL_BREAK_EVENT via SetConsoleCtrlHandler, plus
+    // SIGINT/SIGTERM on Unix. tokio::signal only catches CTRL_C_EVENT and was
+    // routinely swallowed by the parent `cargo run` process, so the shutdown
+    // flag never flipped.
+    if let Err(e) = ctrlc::set_handler(move || {
+        shutdown_flag.store(true, Ordering::SeqCst);
+    }) {
+        warn!(error = %e, "could not install Ctrl+C handler — training will not be interruptible");
+    }
 
     let step_sleep_ms = std::env::var("TRAIN_STEP_SLEEP_MS")
         .ok()
@@ -370,6 +370,9 @@ pub fn train(cfg: TrainConfig) -> Result<HybridValueNet, std::io::Error> {
         }
 
         info!("epoch {epoch} complete");
+
+        // Pause briefly after each epoch (e.g. to let the GPU cool down).
+        std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
     model.save_to(&cfg.output)?;
